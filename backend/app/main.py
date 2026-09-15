@@ -1,13 +1,18 @@
-"""FastAPI app serving OHLCV candles to the React frontend."""
+"""FastAPI app serving OHLCV candles and backtests to the desktop app.
+
+When FRONTEND_DIR is set (the desktop app sets it), the built React UI is served
+from `/` as well, so the page and `/api` share one origin and no CORS is needed.
+"""
 from __future__ import annotations
 
+import os
 import threading
 from contextlib import asynccontextmanager
 from dataclasses import fields
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .backtest import run_backtest
@@ -27,14 +32,6 @@ app = FastAPI(
     version="0.1.0",
     description="Serves gold OHLCV candles resampled from 1-minute data.",
     lifespan=lifespan,
-)
-
-# The frontend runs on its own origin (vite dev server / nginx container).
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET"],
-    allow_headers=["*"],
 )
 
 
@@ -181,3 +178,10 @@ def backtest(request: BacktestRequest) -> dict:
             _CACHE.pop(next(iter(_CACHE)))
         _CACHE[key] = result
     return {**result, "cached": False}
+
+
+# ---------------------------------------------------------------------------
+# frontend - mounted last so every /api route above takes precedence
+# ---------------------------------------------------------------------------
+if os.getenv("FRONTEND_DIR"):
+    app.mount("/", StaticFiles(directory=os.environ["FRONTEND_DIR"], html=True), name="frontend")

@@ -1,7 +1,7 @@
 import type { BacktestResult, CandleResponse, StrategyInfo, SymbolInfo } from './types'
 
-// Vite proxies /api to the backend container, so this stays same-origin.
-const BASE = import.meta.env.VITE_API_BASE ?? '/api'
+// Same-origin: the desktop app's backend serves both the UI and /api (Vite proxies it in dev).
+const BASE = '/api'
 
 async function get<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
   const query = new URLSearchParams()

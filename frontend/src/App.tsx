@@ -246,7 +246,7 @@ export default function App() {
               <div className="state error">
                 <p>Could not load candles.</p>
                 <code>{error}</code>
-                <p className="dim">Is the backend running on :8000?</p>
+                <p className="dim">The backtesting engine may have stopped — restart the app.</p>
               </div>
             ) : (
               <Chart

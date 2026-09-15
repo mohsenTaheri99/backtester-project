@@ -1,11 +1,13 @@
 # Backend
 
-Python 3.12, FastAPI, pandas and backtesting.py. Everything lives in
-`backend/app/`.
+FastAPI, pandas and backtesting.py, running in a background thread of the
+desktop app. Everything lives in `backend/`. Python 3.12+; dependencies in
+`backend/requirements.txt` (including pywebview and PyInstaller for the app).
 
 | Module | Role |
 |---|---|
-| `config.py` | Static config: `DATA_DIR`, `TIMEFRAMES`, `DEFAULT_LIMIT` / `MAX_LIMIT`, `SYMBOLS` |
+| `desktop_app.py` | App entry point: starts the backend thread and the WebView2 window, see [Architecture](architecture.md) |
+| `app/config.py` | Static config: `DATA_DIR`, `TIMEFRAMES`, `DEFAULT_LIMIT` / `MAX_LIMIT`, `SYMBOLS` |
 | `store.py` | `CandleStore`: loads CSVs, resamples, slices pages |
 | `main.py` | FastAPI app and routes, backtest result cache |
 | `backtest.py` | Runs a strategy with backtesting.py and turns the output into JSON |
@@ -36,14 +38,20 @@ A single module-level `store = CandleStore()`, loaded in FastAPI's `lifespan`.
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/health` | `{status, symbols}` — used by the Docker healthcheck |
+| GET | `/api/health` | `{status, symbols}` — the app polls this before showing the UI |
 | GET | `/api/symbols` | instruments with bar count, coverage (`from`/`to`), precision, timeframes |
 | GET | `/api/timeframes` | timeframe labels |
 | GET | `/api/candles` | `{symbol, timeframe, count, total, hasMore, candles[]}` |
 | GET | `/api/strategies` | each strategy's id, name, description, timeframes, defaults and UI controls |
 | POST | `/api/backtest` | summary, trades, equity curve, rejection funnel |
 
-Interactive docs: http://localhost:8000/docs.
+| GET | `/` | the built React UI — only when `FRONTEND_DIR` is set (the desktop app sets it) |
+
+Interactive docs: while the app is running, open http://127.0.0.1:17800/docs in
+a browser (8765 in dev mode).
+
+There is no CORS middleware: the UI is served by this same server (or proxied
+by Vite in dev), so requests are always same-origin.
 
 Errors: unknown symbol → 404, unknown timeframe → 400, unknown strategy → 404,
 parameters the dataclass rejects → 400.
@@ -60,7 +68,7 @@ with its `PARAM_UI` list (label, group, unit, min/max/step). Types are reduced t
 
 Results are cached by `(strategyId, symbol, sorted params)`, up to 16 entries,
 oldest evicted first. A cached response has `"cached": true`. The cache is
-in-process, so it resets when the backend restarts (including on hot reload).
+in-process, so it resets when the app restarts.
 
 ## The backtest runner (`backtest.py`)
 

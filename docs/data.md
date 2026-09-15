@@ -2,7 +2,8 @@
 
 ## The source file
 
-`backend/data/GCF_1m.csv` — COMEX gold futures (`GC=F`, front month), 1-minute
+`backend/data/GCF_1m.csv` (bundled into the app's `data/` folder when
+building) — COMEX gold futures (`GC=F`, front month), 1-minute
 bars from Yahoo Finance.
 
 ```csv
@@ -45,10 +46,16 @@ seconds in `TIMEFRAME_SECONDS` in `frontend/src/lib/markers.ts`.
 
 ## Getting more history
 
+From `backend/`:
+
 ```bash
-docker compose exec backend python -m app.fetch_data --symbol "GC=F" --days 30
-docker compose restart backend
+.venv/Scripts/python -m app.fetch_data --symbol "GC=F" --days 30   # Windows
+.venv/bin/python -m app.fetch_data --symbol "GC=F" --days 30       # macOS / Linux
 ```
+
+Restart the app in dev mode to pick up the new data, and rebuild
+(`npm run dist` in `desktop/`) to ship it — the CSVs are copied into the app at
+build time.
 
 `fetch_data.py` (standard library only):
 
@@ -70,7 +77,8 @@ Options: `--symbol` (Yahoo ticker, default `GC=F`), `--days` (default 30),
    `python -m app.fetch_data --symbol "SI=F"`.
 2. Register it in `SYMBOLS` in `backend/app/config.py`: `id`, `name`,
    `exchange`, `source` (Yahoo ticker), `csv` (file name), `price_precision`.
-3. Restart the backend. It appears in `/api/symbols` and the toolbar picker.
+3. Restart the app (rebuild to ship it). It appears in `/api/symbols` and the
+   toolbar picker.
 
 A symbol whose CSV is missing is skipped at startup with a hint on how to
 download it.

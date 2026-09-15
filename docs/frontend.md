@@ -1,7 +1,9 @@
 # Frontend
 
 React 19, TypeScript (strict), Vite 8, lightweight-charts 5. No state library
-and no router: one screen, with state held in `App.tsx`.
+and no router: one screen, with state held in `App.tsx`. It is built into the
+desktop app, served by its local backend, and knows nothing about the window
+it runs in.
 
 ## Layout
 
@@ -27,7 +29,7 @@ Below 1100px the backtest panel moves under the chart.
 |---|---|
 | `main.tsx` | Mounts `<App />` |
 | `App.tsx` | All top-level state: symbol, timeframe, candles, paging, backtest, selected trade, drawing tool |
-| `api.ts` | `fetchSymbols`, `fetchCandles`, `fetchStrategies`, `runBacktest` (base `/api`, overridable with `VITE_API_BASE`) |
+| `api.ts` | `fetchSymbols`, `fetchCandles`, `fetchStrategies`, `runBacktest` — relative `/api` URLs on the same local server that serves the UI (Vite proxies them in dev) |
 | `types.ts` | Types mirroring the API JSON |
 | `components/Toolbar.tsx` | Symbol picker, timeframe buttons, Volume/Trades toggles |
 | `components/Chart.tsx` | The main lightweight-charts instance |

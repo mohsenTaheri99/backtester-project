@@ -1,28 +1,34 @@
 # Documentation
 
-How the Gold Backtester is put together, one part per page. The top-level
-[README](../README.md) is the quickstart; these pages go one level deeper, into
+How the Gold Backtester desktop app is put together, one part per page. The
+top-level [README](../README.md) is the quickstart; these pages go one level deeper, into
 *why* the code is shaped the way it is and where to change things.
 
 | Page | Covers |
 |---|---|
-| [Architecture](architecture.md) | The two services, how a request flows through them, Docker setup |
+| [Architecture](architecture.md) | One process: WebView2 window + backend thread, startup, shutdown, how requests flow |
+| [Desktop build](desktop.md) | PyInstaller + NSIS setup file, scripts, dev mode, size, troubleshooting |
 | [Data](data.md) | The 1-minute CSV, resampling to other timeframes, downloading more history |
 | [Backend](backend.md) | FastAPI routes, the candle store, the backtest runner, caching |
 | [Strategy](strategy.md) | The ICT liquidity-sweep strategy, the no-lookahead rule, adding a strategy |
 | [Frontend](frontend.md) | React app state, components, the chart, scroll-back paging, trade overlays |
 | [Drawing tools](drawing-tools.md) | TradingView-style drawing tools: how they are stored, drawn and edited |
-| [Development](development.md) | Running locally, checks, conventions, common tasks |
+| [Development](development.md) | Setup, running, checks, conventions, common tasks |
 
 ## Repository map
 
 ```
 backtester project/
-├── README.md                  quickstart + API reference
+├── README.md                  overview, build + dev quickstart
 ├── docs/                      you are here
-├── docker-compose.yml         backend :8000, frontend :5173
-├── .env                       package mirrors used at image build time
+├── desktop/
+│   ├── installer.nsi          NSIS setup file script
+│   ├── assets/                icon.ico, icon.png
+│   ├── scripts/               build (npm run dist), dev, make-icon
+│   └── package.json           scripts + app version
 ├── backend/
+│   ├── desktop_app.py         app entry point: WebView2 window + backend thread
+│   ├── requirements.txt       incl. pywebview and PyInstaller
 │   ├── app/
 │   │   ├── main.py            FastAPI routes
 │   │   ├── config.py          symbols, timeframes, limits
