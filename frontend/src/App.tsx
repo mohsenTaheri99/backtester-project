@@ -1,0 +1,304 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import BacktestPanel from './components/BacktestPanel'
+import Chart from './components/Chart'
+import DrawingToolbar from './components/DrawingToolbar'
+import Legend from './components/Legend'
+import Toolbar from './components/Toolbar'
+import { fetchCandles, fetchStrategies, fetchSymbols, runBacktest } from './api'
+import type { ToolId } from './lib/drawings/types'
+import { useDrawings } from './lib/drawings/useDrawings'
+import { TIMEFRAME_SECONDS, tradeMarkers } from './lib/markers'
+import type { BacktestResult, Candle, StrategyInfo, SymbolInfo, Trade } from './types'
+
+const PAGE_SIZE = 1500
+const FALLBACK_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']
+const MAX_FETCH = 20000 // server-side cap on bars per request
+const MAX_JUMP_REQUESTS = 3
+
+/** TradingView's Alt-key drawing shortcuts, by KeyboardEvent.code. */
+const TOOL_SHORTCUTS: Record<string, ToolId> = {
+  KeyT: 'trendline',
+  KeyH: 'hline',
+  KeyJ: 'hray',
+  KeyV: 'vline',
+  KeyF: 'fib',
+}
+
+export default function App() {
+  const [symbols, setSymbols] = useState<SymbolInfo[]>([])
+  const [symbol, setSymbol] = useState('XAUUSD')
+  const [timeframe, setTimeframe] = useState('5m')
+  const [candles, setCandles] = useState<Candle[]>([])
+  const [hasMore, setHasMore] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showVolume, setShowVolume] = useState(true)
+  const [showTrades, setShowTrades] = useState(true)
+  const [hovered, setHovered] = useState<Candle | null>(null)
+
+  const [strategy, setStrategy] = useState<StrategyInfo | null>(null)
+  const [params, setParams] = useState<Record<string, number | boolean>>({})
+  const [result, setResult] = useState<BacktestResult | null>(null)
+  const [running, setRunning] = useState(false)
+  const [backtestError, setBacktestError] = useState<string | null>(null)
+  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null)
+  const [focusTime, setFocusTime] = useState<number | null>(null)
+
+  const [drawingTool, setDrawingTool] = useState<ToolId>('cursor')
+  const [magnet, setMagnet] = useState(false)
+  const [drawingsVisible, setDrawingsVisible] = useState(true)
+  const { drawings, canUndo, commit: commitDrawings, undo: undoDrawing, clear: clearDrawings } = useDrawings(symbol)
+
+  // Guards the scroll-back loader against overlapping requests.
+  const loadingMoreRef = useRef(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
+
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === 'KeyZ') {
+        e.preventDefault()
+        undoDrawing()
+        return
+      }
+      if (!e.altKey || e.ctrlKey || e.metaKey) return
+      const tool = e.shiftKey ? (e.code === 'KeyR' ? 'rect' : undefined) : TOOL_SHORTCUTS[e.code]
+      if (tool) {
+        e.preventDefault()
+        setDrawingsVisible(true)
+        setDrawingTool(tool)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undoDrawing])
+
+  useEffect(() => {
+    fetchSymbols()
+      .then((list) => {
+        setSymbols(list)
+        if (list.length && !list.some((s) => s.id === symbol)) setSymbol(list[0].id)
+      })
+      .catch((err: Error) => setError(err.message))
+
+    fetchStrategies()
+      .then((list) => {
+        if (!list.length) return
+        setStrategy(list[0])
+        setParams(Object.fromEntries(list[0].params.map((p) => [p.name, p.default])))
+      })
+      .catch((err: Error) => setBacktestError(err.message))
+    // Symbol and strategy lists are static for the life of the page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Load the most recent page whenever the series changes.
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    setHovered(null)
+
+    fetchCandles(symbol, timeframe, { limit: PAGE_SIZE })
+      .then((res) => {
+        if (cancelled) return
+        setCandles(res.candles)
+        setHasMore(res.hasMore)
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setError(err.message)
+          setCandles([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [symbol, timeframe])
+
+  const loadOlder = useCallback(() => {
+    if (loadingMoreRef.current || !hasMore || candles.length === 0) return
+    loadingMoreRef.current = true
+
+    const oldest = candles[0].time
+    fetchCandles(symbol, timeframe, { limit: PAGE_SIZE, before: oldest })
+      .then((res) => {
+        setHasMore(res.hasMore)
+        if (!res.candles.length) return
+        setCandles((current) => {
+          // Ignore a late response that no longer lines up with what is shown.
+          if (!current.length || current[0].time !== oldest) return current
+          return [...res.candles, ...current]
+        })
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => {
+        loadingMoreRef.current = false
+      })
+  }, [candles, hasMore, symbol, timeframe])
+
+  // --- backtesting ----------------------------------------------------------
+  const handleRun = useCallback(() => {
+    if (!strategy) return
+    setRunning(true)
+    setBacktestError(null)
+
+    runBacktest(strategy.id, symbol, params)
+      .then((res) => {
+        setResult(res)
+        setSelectedTrade(null)
+      })
+      .catch((err: Error) => setBacktestError(err.message))
+      .finally(() => setRunning(false))
+  }, [params, strategy, symbol])
+
+  /** Bring the trade's entry bar into the buffer, then focus it. */
+  const handleSelectTrade = useCallback(
+    async (trade: Trade) => {
+      setSelectedTrade(trade)
+
+      const seconds = TIMEFRAME_SECONDS[timeframe] ?? 60
+      let loaded = candles
+
+      // Ask for the whole gap in one request rather than paging 1500 at a time.
+      // Market gaps mean this over-estimates, which is the safe direction.
+      for (let attempt = 0; attempt < MAX_JUMP_REQUESTS; attempt += 1) {
+        if (!loaded.length || loaded[0].time <= trade.entryTime) break
+        const missing = Math.ceil((loaded[0].time - trade.entryTime) / seconds) + 200
+        const res = await fetchCandles(symbol, timeframe, {
+          limit: Math.min(Math.max(missing, PAGE_SIZE), MAX_FETCH),
+          before: loaded[0].time,
+        }).catch((err: Error) => {
+          setError(err.message)
+          return null
+        })
+        if (!res || !res.candles.length) break
+        loaded = [...res.candles, ...loaded]
+        setCandles(loaded)
+        setHasMore(res.hasMore)
+      }
+
+      setFocusTime(trade.entryTime)
+    },
+    [candles, symbol, timeframe],
+  )
+
+  const markers = useMemo(
+    () =>
+      result && showTrades ? tradeMarkers(result.trades, timeframe, selectedTrade?.id ?? null) : [],
+    [result, selectedTrade, showTrades, timeframe],
+  )
+
+  const active = symbols.find((s) => s.id === symbol)
+  const precision = active?.pricePrecision ?? 2
+  const timeframes = active?.timeframes ?? FALLBACK_TIMEFRAMES
+
+  return (
+    <div className="app">
+      <Toolbar
+        symbols={symbols}
+        symbol={symbol}
+        timeframe={timeframe}
+        timeframes={timeframes}
+        showVolume={showVolume}
+        showTrades={showTrades}
+        hasTrades={Boolean(result?.trades.length)}
+        loading={loading}
+        onSymbolChange={setSymbol}
+        onTimeframeChange={setTimeframe}
+        onToggleVolume={() => setShowVolume((v) => !v)}
+        onToggleTrades={() => setShowTrades((v) => !v)}
+      />
+
+      <div className="workspace">
+        <main className="chart-panel">
+          <DrawingToolbar
+            tool={drawingTool}
+            magnet={magnet}
+            visible={drawingsVisible}
+            hasDrawings={drawings.length > 0}
+            canUndo={canUndo}
+            onToolChange={(tool) => {
+              if (tool !== 'cursor') setDrawingsVisible(true)
+              setDrawingTool(tool)
+            }}
+            onToggleMagnet={() => setMagnet((m) => !m)}
+            onToggleVisible={() => setDrawingsVisible((v) => !v)}
+            onUndo={undoDrawing}
+            onClear={clearDrawings}
+          />
+
+          <div className="chart-area">
+            <Legend
+              symbol={symbol}
+              timeframe={timeframe}
+              candle={hovered ?? candles[candles.length - 1] ?? null}
+              precision={precision}
+              trade={selectedTrade}
+            />
+
+            {error ? (
+              <div className="state error">
+                <p>Could not load candles.</p>
+                <code>{error}</code>
+                <p className="dim">Is the backend running on :8000?</p>
+              </div>
+            ) : (
+              <Chart
+                seriesKey={`${symbol}:${timeframe}`}
+                candles={candles}
+                pricePrecision={precision}
+                showVolume={showVolume}
+                markers={markers}
+                trades={result?.trades ?? []}
+                selectedTrade={selectedTrade}
+                showTrades={showTrades}
+                timeframe={timeframe}
+                focusTime={focusTime}
+                onReachLeftEdge={loadOlder}
+                onHover={setHovered}
+                drawings={drawings}
+                drawingTool={drawingTool}
+                magnet={magnet}
+                drawingsVisible={drawingsVisible}
+                onDrawingsChange={commitDrawings}
+                onDrawingToolDone={() => setDrawingTool('cursor')}
+              />
+            )}
+          </div>
+        </main>
+
+        <BacktestPanel
+          strategy={strategy}
+          params={params}
+          result={result}
+          running={running}
+          error={backtestError}
+          selectedTradeId={selectedTrade?.id ?? null}
+          onParamChange={(name, value) => setParams((current) => ({ ...current, [name]: value }))}
+          onReset={() =>
+            setParams(Object.fromEntries((strategy?.params ?? []).map((p) => [p.name, p.default])))
+          }
+          onRun={handleRun}
+          onSelectTrade={handleSelectTrade}
+        />
+      </div>
+
+      <footer className="status">
+        <span>{candles.length.toLocaleString()} bars loaded</span>
+        <span className="dim">{hasMore ? 'scroll left for more history' : 'start of history'}</span>
+        {result && (
+          <span className="dim">
+            {result.trades.length} trades · {result.summary.returnPct?.toFixed(2)}% ·{' '}
+            {result.summary.winRatePct?.toFixed(0)}% win
+          </span>
+        )}
+      </footer>
+    </div>
+  )
+}
