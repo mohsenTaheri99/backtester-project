@@ -93,6 +93,7 @@ export default function Toolbar({
         onChange={(e) => onSymbolChange(e.target.value)}
         disabled={symbols.length <= 1}
       >
+        {symbols.length === 0 && <option value="">no symbols</option>}
         {symbols.map((s) => (
           <option key={s.id} value={s.id}>
             {s.id} - {s.name}

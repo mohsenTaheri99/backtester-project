@@ -81,16 +81,8 @@ class Symbol:
         }
 
 
-SYMBOLS: dict[str, Symbol] = {
-    s.id: s
-    for s in [
-        Symbol(
-            id="XAUUSD",
-            name="Gold Futures (front month)",
-            exchange="COMEX",
-            source="GC=F",
-            csv="GCF_1m.csv",
-            price_precision=2,
-        ),
-    ]
-}
+# Symbols that ship with the app: none. Every instrument is imported from a
+# data provider in Settings -> Market data and cached under USER_DATA_DIR, so
+# the app carries no sample dataset and nothing that cannot stream or forward
+# test. DATA_DIR stays for the non-imported side of Symbol.path.
+SYMBOLS: dict[str, Symbol] = {}

@@ -1,9 +1,9 @@
 """Loads the 1-minute CSVs once and derives every other timeframe from them.
 
-Two kinds of symbol share the cache. The bundled sample ships with the app and
-its CSV is read-only. Symbols the user imports from a data provider live in
-USER_DATA_DIR: the store owns those files and rewrites them whenever history is
-downloaded or a live bar arrives, so a restart picks up where the app left off.
+Every symbol is imported from a data provider and lives in USER_DATA_DIR: the
+store owns those files and rewrites them whenever history is downloaded or a
+live bar arrives, so a restart picks up where the app left off. A fresh install
+holds nothing until the user imports something.
 """
 from __future__ import annotations
 
@@ -74,12 +74,7 @@ class CandleStore:
         for symbol in self._symbols.values():
             path = symbol.path
             if not path.exists():
-                hint = (
-                    "re-import it in Settings"
-                    if symbol.imported
-                    else f"run: python -m app.fetch_data --symbol {symbol.source}"
-                )
-                print(f"[store] missing {path} - {hint}")
+                print(f"[store] missing {path} - re-import {symbol.id} in Settings")
                 continue
             raw = self._read_csv(path)
             kept = drop_padding(raw, symbol.market)

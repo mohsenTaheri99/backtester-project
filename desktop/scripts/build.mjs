@@ -5,7 +5,7 @@
  *
  * 1. Builds the React frontend (frontend/dist).
  * 2. Creates/updates backend/.venv from backend/requirements.txt.
- * 3. Bundles backend/desktop_app.py + frontend + data with PyInstaller.
+ * 3. Bundles backend/desktop_app.py + the built frontend with PyInstaller.
  * 4. Wraps the bundle in an NSIS installer: release/Gold Backtester-Setup-<version>.exe
  *
  * Environment:
@@ -114,7 +114,6 @@ run(
     '--paths', backendDir,
     '--collect-submodules', 'app',
     '--add-data', `${path.join(frontendDir, 'dist')}${sep}frontend`,
-    '--add-data', `${path.join(backendDir, 'data')}${sep}data`,
     ...excluded.flatMap((name) => ['--exclude-module', name]),
   ],
   backendDir,

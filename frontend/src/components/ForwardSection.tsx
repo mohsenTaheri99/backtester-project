@@ -71,7 +71,8 @@ export default function ForwardSection({
           </>
         ) : (
           <p className="warn small">
-            <b>{symbol}</b> has no data provider, so it cannot receive live candles.{' '}
+            <b>{symbol || 'No symbol'}</b>
+            {symbol ? ' has no data provider, so it cannot receive live candles. ' : ' is selected. '}
             <button type="button" className="link-button inline" onClick={onOpenSettings}>
               Import a symbol from Twelve Data
             </button>{' '}

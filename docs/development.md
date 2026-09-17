@@ -75,7 +75,7 @@ Identical backtest requests are cached until the app restarts.
 |---|---|
 | Add a timeframe | `TIMEFRAMES` in `backend/app/config.py` + `TIMEFRAME_SECONDS` in `frontend/src/lib/markers.ts` |
 | Add an instrument | CSV in `backend/data/` + `SYMBOLS` in `config.py` — see [Data](data.md) |
-| Refresh data | `backend/.venv/Scripts/python -m app.fetch_data --days 30` (from `backend/`) |
+| Refresh data | Settings -> Market data -> **Update**, or pick a range in the setup tab |
 | Expose a strategy parameter in the UI | `PARAM_UI` in `ict_sweep.py` |
 | Add a strategy | [Strategy → Adding a strategy](strategy.md#adding-a-strategy) |
 | Add a drawing tool | [Drawing tools → Adding a tool](drawing-tools.md#adding-a-tool) |

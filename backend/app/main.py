@@ -103,7 +103,7 @@ def symbols() -> list[dict]:
 
 @app.get("/api/candles")
 def candles(
-    symbol: str = Query("XAUUSD", description="symbol id from /api/symbols"),
+    symbol: str = Query(..., description="symbol id from /api/symbols"),
     tf: str = Query("1m", description="timeframe, e.g. 1m, 5m, 1h, 1d"),
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     before: int | None = Query(None, description="unix seconds; return bars older than this"),
@@ -202,11 +202,11 @@ class ImportRequest(BaseModel):
 
 
 def _slug(ticker: str) -> str:
-    """XAU/USD -> XAUUSD, kept unique against the symbols that ship with the app."""
+    """XAU/USD -> XAUUSD. Re-importing the same ticker reuses its id."""
     base = re.sub(r"[^A-Za-z0-9]", "", ticker).upper() or "SYMBOL"
     existing = store.symbol(base)
     if existing is not None and not existing.imported:
-        return f"{base}-TD"  # the bundled sample already owns that id
+        return f"{base}-TD"  # a built-in symbol already owns that id
     return base
 
 
@@ -403,7 +403,7 @@ _CACHE_MAX = 16
 
 class BacktestRequest(BaseModel):
     strategyId: str = Field("ict_sweep", description="id from /api/strategies")
-    symbol: str = Field("XAUUSD", description="symbol id from /api/symbols")
+    symbol: str = Field(..., description="symbol id from /api/symbols")
     params: dict[str, Any] = Field(default_factory=dict, description="parameter overrides")
     rangeFrom: int | None = Field(None, description="unix seconds; test from here")
     rangeTo: int | None = Field(None, description="unix seconds; test up to here")

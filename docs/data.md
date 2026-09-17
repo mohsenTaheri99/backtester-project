@@ -2,8 +2,13 @@
 
 ## The source file
 
-`backend/data/GCF_1m.csv` (bundled into the app's `data/` folder when
-building) — COMEX gold futures (`GC=F`, front month), 1-minute
+Every instrument is imported from Twelve Data in Settings → Market data and
+cached as 1-minute CSV under `%LOCALAPPDATA%\GoldBacktester\data`. The app
+carries no market data of its own; a fresh install has an empty chart until
+something is imported. Historically a COMEX gold futures sample (`GC=F`) shipped
+in `backend/data/`, downloaded by a `fetch_data.py` CLI — both were removed once
+every symbol could come from a provider with live and forward-test support.
+1-minute
 bars from Yahoo Finance.
 
 ```csv
@@ -46,39 +51,25 @@ seconds in `TIMEFRAME_SECONDS` in `frontend/src/lib/markers.ts`.
 
 ## Getting more history
 
-From `backend/`:
+Pick a range in the **setup** tab (`7d / 30d / 90d / All`, or explicit UTC
+dates). The panel prices it before you run: a range already cached spends
+nothing, and only genuinely missing spans are downloaded. Gaps *inside* the
+cached span are weekends and market closures, so they are never re-fetched.
 
-```bash
-.venv/Scripts/python -m app.fetch_data --symbol "GC=F" --days 30   # Windows
-.venv/bin/python -m app.fetch_data --symbol "GC=F" --days 30       # macOS / Linux
-```
-
-Restart the app in dev mode to pick up the new data, and rebuild
-(`npm run dist` in `desktop/`) to ship it — the CSVs are copied into the app at
-build time.
-
-`fetch_data.py` (standard library only):
-
-- walks backwards from now in **7-day windows**, the most Yahoo serves per
-  1m request;
-- **merges** into the existing CSV, so repeated runs extend coverage rather than
-  overwrite it;
-- keeps partial data if a window fails (logged to stderr).
-
-Yahoo only keeps about **30 days** of 1m data, so that is the ceiling from this
-source. Older windows are rejected and skipped.
-
-Options: `--symbol` (Yahoo ticker, default `GC=F`), `--days` (default 30),
-`--out` (default `data/<ticker>_1m.csv`).
+Downloads page backwards in requests of 5,000 candles, paced to the
+requests-a-minute your plan allows (Settings -> Data provider -> Rate limit), and
+retry once on a 429. Thirty days of 1-minute candles is about nine requests.
 
 ## Adding an instrument
 
-1. Put a 1m CSV in `backend/data/`, e.g. with
-   `python -m app.fetch_data --symbol "SI=F"`.
-2. Register it in `SYMBOLS` in `backend/app/config.py`: `id`, `name`,
-   `exchange`, `source` (Yahoo ticker), `csv` (file name), `price_precision`.
-3. Restart the app (rebuild to ship it). It appears in `/api/symbols` and the
-   toolbar picker.
+1. Settings -> Data provider: paste a Twelve Data API key and press
+   **Test connection**.
+2. Settings -> Market data: search for the instrument (`XAU/USD`, `EUR/USD`,
+   `AAPL`) and press **Import**. It downloads `history_days` of 1-minute
+   candles, caches them under `%LOCALAPPDATA%\GoldBacktester\data`, and the
+   chart switches to it.
+3. **Update** tops it up to now; **Remove** deletes it and its cached candles.
 
-A symbol whose CSV is missing is skipped at startup with a hint on how to
-download it.
+The catalogue of imported symbols lives in `settings.json` beside the candles,
+so symbols survive restarts and app upgrades. A symbol whose CSV has gone
+missing is skipped at startup with a note to re-import it.

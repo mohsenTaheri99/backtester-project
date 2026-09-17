@@ -34,12 +34,10 @@ backtester project/
 │   │   ├── config.py          symbols, timeframes, limits
 │   │   ├── store.py           CSV loading + resampling cache
 │   │   ├── backtest.py        runs backtesting.py, shapes the JSON result
-│   │   ├── fetch_data.py      Yahoo Finance 1m downloader
 │   │   └── strategies/
 │   │       ├── __init__.py    strategy registry
 │   │       ├── signals.py     fractals, ATR, session windows
 │   │       └── ict_sweep.py   the ICT strategy
-│   ├── data/GCF_1m.csv        1-minute gold candles
 │   └── strategy-description.md  the strategy spec (Persian)
 └── frontend/
     └── src/

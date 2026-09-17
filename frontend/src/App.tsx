@@ -47,7 +47,8 @@ const TOOL_SHORTCUTS: Record<string, ToolId> = {
 
 export default function App() {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([])
-  const [symbol, setSymbol] = useState('XAUUSD')
+  const [symbolsLoaded, setSymbolsLoaded] = useState(false)
+  const [symbol, setSymbol] = useState('')  // nothing until a symbol is imported
   const [timeframe, setTimeframe] = useState('5m')
   const [candles, setCandles] = useState<Candle[]>([])
   const [hasMore, setHasMore] = useState(false)
@@ -111,9 +112,13 @@ export default function App() {
     fetchSymbols()
       .then((list) => {
         setSymbols(list)
+        setSymbolsLoaded(true)
         if (list.length && !list.some((s) => s.id === symbol)) setSymbol(list[0].id)
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => {
+        setSymbolsLoaded(true)
+        setError(err.message)
+      })
 
     fetchStrategies()
       .then((list) => {
@@ -167,6 +172,12 @@ export default function App() {
   // Load the most recent page whenever the series changes.
   useEffect(() => {
     let cancelled = false
+    if (!symbol) {
+      setCandles([])
+      setHasMore(false)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     setHovered(null)
@@ -223,7 +234,7 @@ export default function App() {
   }, [liveTick])
 
   const loadOlder = useCallback(() => {
-    if (loadingMoreRef.current || !hasMore || candles.length === 0) return
+    if (!symbol || loadingMoreRef.current || !hasMore || candles.length === 0) return
     loadingMoreRef.current = true
 
     const oldest = candles[0].time
@@ -387,6 +398,18 @@ export default function App() {
                 <p>Could not load candles.</p>
                 <code>{error}</code>
                 <p className="dim">The backtesting engine may have stopped — restart the app.</p>
+              </div>
+            ) : symbolsLoaded && symbols.length === 0 ? (
+              <div className="state empty">
+                <h2>No symbols yet</h2>
+                <p className="dim">
+                  Add a Twelve Data API key, then import an instrument to download its
+                  1-minute history. Imported symbols can be charted, backtested, streamed
+                  live and forward tested.
+                </p>
+                <button type="button" className="run" onClick={() => setSettingsOpen(true)}>
+                  Open Settings
+                </button>
               </div>
             ) : (
               <Chart

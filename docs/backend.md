@@ -11,7 +11,6 @@ desktop app. Everything lives in `backend/`. Python 3.12+; dependencies in
 | `store.py` | `CandleStore`: loads CSVs, resamples, slices pages |
 | `main.py` | FastAPI app and routes, backtest result cache |
 | `backtest.py` | Runs a strategy with backtesting.py and turns the output into JSON |
-| `fetch_data.py` | CLI downloader, see [Data](data.md) |
 | `strategies/` | Strategy registry and implementations, see [Strategy](strategy.md) |
 
 ## Configuration (`config.py`)

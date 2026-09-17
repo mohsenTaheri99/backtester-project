@@ -1195,3 +1195,22 @@ body {
 .live-price .dim {
   font-size: 11px;
 }
+
+.state.empty {
+  gap: 10px;
+}
+
+.state.empty h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.state.empty p {
+  /* The container is inset:0, so the text is bounded here, not on the box. */
+  max-width: 420px;
+  margin: 0;
+  line-height: 1.6;
+}

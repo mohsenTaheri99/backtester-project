@@ -168,7 +168,13 @@ export default function BacktestPanel({
             </p>
           )}
         </div>
-        <button type="button" className="run" onClick={onRun} disabled={running || !strategy}>
+        <button
+          type="button"
+          className="run"
+          onClick={onRun}
+          disabled={running || !strategy || !symbol}
+          title={symbol ? undefined : 'Import a symbol first'}
+        >
           {running ? 'Running…' : 'Run backtest'}
         </button>
       </div>

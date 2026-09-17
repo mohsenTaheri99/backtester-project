@@ -1,9 +1,11 @@
 # Gold Backtester
 
-A Windows desktop app for backtesting gold strategies on real 1-minute data. It
-shows a TradingView-style chart with drawing tools, runs strategies through
+A Windows desktop app for backtesting trading strategies on real 1-minute data.
+It shows a TradingView-style chart with drawing tools, runs strategies through
 **backtesting.py**, and presents the results: stats, equity curve, rejection
-funnel, a trade list, and every trade drawn on the chart.
+funnel, a trade list, and every trade drawn on the chart. Instruments are
+imported from [Twelve Data](https://twelvedata.com) with your own API key, so
+the app ships with no market data of its own.
 
 ```
 ┌──────────────────── GoldBacktester.exe (one process) ────────────────────┐
@@ -14,7 +16,7 @@ funnel, a trade list, and every trade drawn on the chart.
 │                                                  │                        │
 └──────────────────────────────────────────────────┼────────────────────────┘
                                                    ▼
-                                  data/GCF_1m.csv (25,791 real 1m bars)
+                       %LOCALAPPDATA%\GoldBacktester\data (imported 1m candles)
 ```
 
 The window uses the WebView2 engine that ships with Windows 10/11 instead of
@@ -161,7 +163,6 @@ sample to judge the strategy. It proves the engine, not the edge.
 backend/     Python app: API, strategies, and the desktop window
   desktop_app.py       app entry point (window + backend thread)
   app/                 FastAPI app, candle store, backtest runner, strategies
-  data/GCF_1m.csv      1-minute source data (bundled into the app)
 frontend/    React + TypeScript UI (bundled into the app)
 desktop/     build scripts, NSIS installer script, icon
 docs/        documentation

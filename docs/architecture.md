@@ -17,7 +17,7 @@ with Microsoft Edge WebView2.
 │  backend thread: uvicorn → FastAPI (backend/app/main.py)                   │
 │    /api/*  candles, strategies, backtests                                  │
 │    /       built React UI (StaticFiles, FRONTEND_DIR)                      │
-│    DATA_DIR ─► data/GCF_1m.csv loaded at startup                           │
+│    USER_DATA_DIR ─► imported 1m CSVs loaded at startup                     │
 └────────────────────────────────────────────────────────────────────────────┘
    %LOCALAPPDATA%\GoldBacktester\webview   WebView2 profile: localStorage (drawings)
    %LOCALAPPDATA%\GoldBacktester\logs      app.log (the exe has no console)
@@ -88,7 +88,7 @@ and everything only it needs (PIL, tornado, jinja2, …), saving about 35 MB.
 ### Opening the chart
 
 1. `GET /api/symbols` and `GET /api/strategies`.
-2. `GET /api/candles?symbol=XAUUSD&tf=5m&limit=1500` — the newest page.
+2. `GET /api/candles?symbol=XAUUSD-TD&tf=5m&limit=1500` — the newest page.
 3. Near the left edge: `GET /api/candles?...&before=<oldest bar time>`, spliced
    in front without moving the viewport.
 
