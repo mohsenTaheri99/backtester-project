@@ -64,11 +64,17 @@ retry once on a 429. Thirty days of 1-minute candles is about nine requests.
 
 1. Settings -> Data provider: paste a Twelve Data API key and press
    **Test connection**.
-2. Settings -> Market data: search for the instrument (`XAU/USD`, `EUR/USD`,
-   `AAPL`) and press **Import**. It downloads `history_days` of 1-minute
-   candles, caches them under `%LOCALAPPDATA%\GoldBacktester\data`, and the
-   chart switches to it.
-3. **Update** tops it up to now; **Remove** deletes it and its cached candles.
+2. Toolbar -> **Chart data**: search for the instrument (`XAU/USD`, `EUR/USD`,
+   `AAPL`), pick how much history, and press **Add**. It caches 1-minute candles
+   under `%LOCALAPPDATA%\GoldBacktester\data` and the chart switches to it.
+3. **Update** tops it up to now, **+180d** extends it backwards, and **Remove**
+   deletes it and its cached candles after a confirmation.
+
+Downloads run on the backend so the window can show progress instead of
+blocking: `GET /api/data/job` reports the running one - requests done of an
+estimate, candles so far, credits spent, and a countdown whenever the rate
+limiter is holding the next request. Only one runs at a time, since they would
+be serialised by that limiter anyway.
 
 The catalogue of imported symbols lives in `settings.json` beside the candles,
 so symbols survive restarts and app upgrades. A symbol whose CSV has gone

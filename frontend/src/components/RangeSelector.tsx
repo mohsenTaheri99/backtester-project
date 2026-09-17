@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { downloadRange, fetchRangePlan } from '../api'
+import { useDataJob } from '../lib/useDataJob'
 import type { RangePlan, SymbolInfo } from '../types'
 
 export interface Range {
@@ -41,9 +42,8 @@ const day = (unix: number) =>
 
 export default function RangeSelector({ symbol, range, onChange, onDownloaded }: Props) {
   const [plan, setPlan] = useState<RangePlan | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [watching, setWatching] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [note, setNote] = useState<string | null>(null)
 
   const from = range.from
   const to = range.to
@@ -63,7 +63,6 @@ export default function RangeSelector({ symbol, range, onChange, onDownloaded }:
   useEffect(refreshPlan, [refreshPlan])
 
   const choose = (days: number | null) => {
-    setNote(null)
     setError(null)
     if (days === null) {
       onChange({ from: null, to: null })
@@ -73,28 +72,26 @@ export default function RangeSelector({ symbol, range, onChange, onDownloaded }:
     onChange({ from: now - days * DAY, to: null })
   }
 
+  // The download runs on the server, paced to the provider's rate limit, so the
+  // panel watches it rather than blocking on a request for a minute.
+  const onFinished = useCallback(() => {
+    onDownloaded()
+    refreshPlan()
+  }, [onDownloaded, refreshPlan])
+
+  const { job, setJob } = useDataJob(watching, onFinished)
+  const busy = job?.state === 'running'
+
   const handleDownload = () => {
     if (!symbol || from === null) return
-    setBusy(true)
     setError(null)
-    setNote(null)
+    setWatching(true)
     downloadRange(symbol.id, from, to ?? Math.floor(Date.now() / 1000))
-      .then((result) => {
-        setNote(
-          result.upToDate
-            ? 'Already cached — no credits spent.'
-            : `Downloaded ${result.added.toLocaleString()} bars for ${result.credits} credit${
-                result.credits === 1 ? '' : 's'
-              }.` +
-              (result.padded
-                ? ` Dropped ${result.padded.toLocaleString()} padded bars from the closed market.`
-                : ''),
-        )
-        onDownloaded()
-        refreshPlan()
+      .then((started) => {
+        setJob(started)
+        if (started.state !== 'running') onFinished() // already cached
       })
       .catch((err: Error) => setError(err.message))
-      .finally(() => setBusy(false))
   }
 
   const activePreset = (days: number | null) => {
@@ -160,7 +157,9 @@ export default function RangeSelector({ symbol, range, onChange, onDownloaded }:
               {plan.canDownload ? (
                 <>
                   <button type="button" className="ghost" onClick={handleDownload} disabled={busy}>
-                    {busy ? 'Downloading…' : `Download missing (~${plan.credits} credits)`}
+                    {busy
+                      ? `Downloading ${job?.pagesDone ?? 0}/${job?.pagesTotal ?? '?'}…`
+                      : `Download missing (~${plan.credits} credits)`}
                   </button>
                   <span className="dim small">
                     {plan.missing
@@ -179,7 +178,16 @@ export default function RangeSelector({ symbol, range, onChange, onDownloaded }:
         </>
       )}
 
-      {note && <p className="ok small">{note}</p>}
+      {job?.state === 'running' && (
+        <p className={job.waitingSeconds > 0 ? 'warn small' : 'dim small'}>
+          {job.waitingSeconds > 0
+            ? `Paused for the rate limit — resuming in ${job.waitingSeconds}s`
+            : job.message}
+        </p>
+      )}
+      {job && job.state !== 'running' && (
+        <p className={job.state === 'error' ? 'bad small' : 'ok small'}>{job.error ?? job.message}</p>
+      )}
       {error && <div className="panel-error">{error}</div>}
     </section>
   )

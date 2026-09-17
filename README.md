@@ -62,10 +62,24 @@ upgrades and uninstalls leave it alone.
 
 - **Data provider** - paste a [Twelve Data](https://twelvedata.com) API key and
   press *Test connection* to see the plan and today's credit use.
-- **Market data** - search for a symbol (`XAU/USD`, `EUR/USD`, `AAPL`), import
-  its 1-minute history, then update or remove it later. Imported candles live in
-  `%LOCALAPPDATA%\GoldBacktester\data`. Downloads are paced to the plan's
-  requests-a-minute so a long one cannot die half way with a 429.
+- **Rate limit** - requests a minute your plan allows. Downloads are paced to
+  it, so a long one cannot die half way with a 429.
+
+## Chart data
+
+The second toolbar icon opens **Chart data**, which owns everything downloaded:
+a row per symbol with its candle count, the number of days actually holding
+candles, the coverage dates, **its size on disk**, and a running total across
+all of them. From there you can search and add an instrument (7 / 30 / 90 / 180
+days), **Update** one to now, extend it further back, or remove it and its
+cached candles - behind a confirmation naming how many candles would go.
+
+Downloading is the slow part - a month of 1-minute candles is nine requests
+paced to your plan's rate limit - so it runs on the backend and the window
+watches it: a progress bar over requests done, candles so far, credits spent,
+elapsed time, and, when the limiter holds a request back, a countdown saying so
+rather than a bar that appears to have frozen. Closing the window does not
+cancel it, and reopening picks the progress back up.
 - **Live data** - the **Live** button in the toolbar starts and stops streaming,
   with the last price, its direction and the age of the last update beside it.
   It is greyed out for a symbol with no data provider, since there is nothing to

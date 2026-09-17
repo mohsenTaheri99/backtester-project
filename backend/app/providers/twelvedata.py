@@ -18,6 +18,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from typing import Callable
 
 import pandas as pd
 
@@ -51,8 +52,12 @@ class RateLimiter:
         self._times: list[float] = []
         self._lock = threading.Lock()
 
-    def take(self, per_minute: int) -> float:
-        """Block until a credit is free. Returns how long it waited."""
+    def take(self, per_minute: int, on_wait: Callable[[float], None] | None = None) -> float:
+        """Block until a credit is free. Returns how long it waited.
+
+        `on_wait` is told how long the block will last, so a download can say
+        "paused for the rate limit" instead of appearing to hang.
+        """
         waited = 0.0
         while True:
             with self._lock:
@@ -62,6 +67,8 @@ class RateLimiter:
                     self._times.append(now)
                     return waited
                 sleep_for = 60.0 - (now - self._times[0]) + 0.05
+            if on_wait:
+                on_wait(sleep_for)
             time.sleep(min(sleep_for, 60.0))
             waited += sleep_for
 
@@ -90,12 +97,14 @@ class TwelveData:
         self.api_key = (api_key or "").strip()
         self.credits_per_minute = max(1, int(credits_per_minute))
         self.requests = 0  # spent by this client, for reporting a download's cost
+        # Called with the seconds a request is about to wait for the rate limit.
+        self.on_wait: Callable[[float], None] | None = None
         if not self.api_key:
             raise TwelveDataError("No Twelve Data API key set - add one in Settings.", 401)
 
     # -- plumbing -----------------------------------------------------------
     def _request(self, path: str, **params: object) -> dict:
-        limiter.take(self.credits_per_minute)
+        limiter.take(self.credits_per_minute, self.on_wait)
         self.requests += 1
         try:
             return self._send(path, **params)
@@ -167,14 +176,18 @@ class TwelveData:
         end: datetime,
         interval: str = "1min",
         max_pages: int = 60,
+        on_page: Callable[[int, int], None] | None = None,
     ) -> pd.DataFrame:
         """Every candle in [start, end], paged backwards from `end`.
 
         Each page is one credit, so the caller decides whether a range is worth
-        downloading before calling this - see `pages_for`.
+        downloading before calling this - see `pages_for`. `on_page` is called
+        after each one with (pages so far, candles so far) so a long download can
+        report progress instead of going quiet for a minute.
         """
         frames: list[pd.DataFrame] = []
         cursor = end
+        collected = 0
 
         for _ in range(max_pages):
             if cursor <= start:
@@ -183,6 +196,9 @@ class TwelveData:
             if page.empty:
                 break
             frames.append(page)
+            collected += len(page)
+            if on_page:
+                on_page(len(frames), collected)
             oldest = page.index[0].to_pydatetime().astimezone(timezone.utc)
             # A short page means the provider has nothing older in this window.
             if len(page) < MAX_OUTPUTSIZE or oldest <= start:

@@ -1214,3 +1214,111 @@ body {
   margin: 0;
   line-height: 1.6;
 }
+
+/* --------------------------------------------------------------------------
+   chart data modal
+   -------------------------------------------------------------------------- */
+.modal.wide {
+  width: min(900px, 100%);
+  max-height: min(680px, 100%);
+}
+
+.modal.wide .modal-pane {
+  padding: 16px 18px 20px;
+}
+
+.modal-head h2 {
+  flex: none;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+
+.data-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 0 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table th.right,
+.data-table td.right {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.data-table td.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table tr.selected td {
+  background: rgba(224, 182, 74, 0.06);
+}
+
+.data-table .right button + button,
+.data-table .right span + button {
+  margin-left: 6px;
+}
+
+/* a download in flight */
+.job {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.job.running {
+  border-left-color: var(--accent);
+}
+
+.job.done {
+  border-left-color: var(--up);
+}
+
+.job.error {
+  border-left-color: var(--down);
+}
+
+.job-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.job p {
+  margin: 4px 0 0;
+}
+
+.job-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: #1b212c;
+  overflow: hidden;
+}
+
+.job-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}

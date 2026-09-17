@@ -1,21 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import MarketDataSection from './MarketDataSection'
 import { fetchProviderUsage, fetchSettings, saveSettings } from '../api'
-import type { ParamValue, ProviderUsage, SettingDef, SettingsSchema, SymbolInfo } from '../types'
+import type { ParamValue, ProviderUsage, SettingDef, SettingsSchema } from '../types'
 
 interface Props {
   open: boolean
-  symbols: SymbolInfo[]
   onClose: () => void
   onSaved: () => void
-  onSymbolsChanged: (symbols: SymbolInfo[], select?: string) => void
+  onOpenData: () => void
 }
 
 /**
- * Sections that are not just a list of settings. They are spliced into the nav
+ * Sections that are more than a list of settings. They are spliced into the nav
  * after the named group, so adding one never touches the schema-driven path.
+ * Downloaded candles have their own modal and are not one of these.
  */
-const CUSTOM_SECTIONS = [{ name: 'Market data', after: 'Data provider' }]
+const CUSTOM_SECTIONS: { name: string; after: string }[] = []
 
 function Field({
   setting,
@@ -99,7 +98,7 @@ function Field({
   )
 }
 
-export default function SettingsModal({ open, symbols, onClose, onSaved, onSymbolsChanged }: Props) {
+export default function SettingsModal({ open, onClose, onSaved, onOpenData }: Props) {
   const [schema, setSchema] = useState<SettingsSchema | null>(null)
   const [edits, setEdits] = useState<Record<string, ParamValue>>({})
   const [section, setSection] = useState<string>('Data provider')
@@ -212,9 +211,7 @@ export default function SettingsModal({ open, symbols, onClose, onSaved, onSymbo
           <div className="modal-pane">
             {error && <div className="panel-error">{error}</div>}
 
-            {section === 'Market data' ? (
-              <MarketDataSection symbols={symbols} onSymbolsChanged={onSymbolsChanged} />
-            ) : (
+            {(
               <>
                 {group?.settings.map((setting) => (
                   <Field
@@ -240,6 +237,16 @@ export default function SettingsModal({ open, symbols, onClose, onSaved, onSymbo
                         <span className="bad small">{usage.message}</span>
                       ))}
                   </div>
+                )}
+
+                {section === 'Data provider' && (
+                  <p className="field-help">
+                    Downloaded candles, their size on disk and their coverage live in{' '}
+                    <button type="button" className="link-button inline" onClick={onOpenData}>
+                      Chart data
+                    </button>
+                    .
+                  </p>
                 )}
               </>
             )}

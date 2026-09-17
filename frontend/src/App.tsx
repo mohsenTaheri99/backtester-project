@@ -3,6 +3,7 @@ import BacktestPanel from './components/BacktestPanel'
 import Chart from './components/Chart'
 import DrawingToolbar from './components/DrawingToolbar'
 import Legend from './components/Legend'
+import DataModal from './components/DataModal'
 import type { Range } from './components/RangeSelector'
 import SettingsModal from './components/SettingsModal'
 import Toolbar from './components/Toolbar'
@@ -68,6 +69,7 @@ export default function App() {
   const [focusTime, setFocusTime] = useState<number | null>(null)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [dataOpen, setDataOpen] = useState(false)
   const [live, setLive] = useState<LiveStatus | null>(null)
   const [forward, setForward] = useState<ForwardState | null>(null)
   const [forwardStarting, setForwardStarting] = useState(false)
@@ -285,6 +287,20 @@ export default function App() {
       .finally(() => setLiveBusy(false))
   }, [live, symbol, syncLive])
 
+  /** A symbol was imported, updated or removed: adopt the new list. */
+  const handleSymbolsChanged = useCallback(
+    (list: SymbolInfo[], select?: string) => {
+      setSymbols(list)
+      setSymbol((current) => {
+        if (select && list.some((s) => s.id === select)) return select
+        if (list.some((s) => s.id === current)) return current
+        return list.length ? list[0].id : ''
+      })
+      setDataVersion((n) => n + 1)
+    },
+    [],
+  )
+
   const handleStartForward = useCallback(() => {
     if (!strategy) return
     setForwardStarting(true)
@@ -364,6 +380,7 @@ export default function App() {
         onToggleVolume={() => setShowVolume((v) => !v)}
         onToggleTrades={() => setShowTrades((v) => !v)}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenData={() => setDataOpen(true)}
       />
 
       <div className="workspace">
@@ -407,8 +424,8 @@ export default function App() {
                   1-minute history. Imported symbols can be charted, backtested, streamed
                   live and forward tested.
                 </p>
-                <button type="button" className="run" onClick={() => setSettingsOpen(true)}>
-                  Open Settings
+                <button type="button" className="run" onClick={() => setDataOpen(true)}>
+                  Add a symbol
                 </button>
               </div>
             ) : (
@@ -467,15 +484,24 @@ export default function App() {
 
       <SettingsModal
         open={settingsOpen}
-        symbols={symbols}
         onClose={() => setSettingsOpen(false)}
         onSaved={() => syncLive(symbol)}
-        onSymbolsChanged={(list, select) => {
-          setSymbols(list)
-          if (select && list.some((s) => s.id === select)) setSymbol(select)
-          else if (!list.some((s) => s.id === symbol) && list.length) setSymbol(list[0].id)
-          setDataVersion((n) => n + 1)
+        onOpenData={() => {
+          setSettingsOpen(false)
+          setDataOpen(true)
         }}
+      />
+
+      <DataModal
+        open={dataOpen}
+        symbols={symbols}
+        activeSymbol={symbol}
+        onClose={() => setDataOpen(false)}
+        onOpenSettings={() => {
+          setDataOpen(false)
+          setSettingsOpen(true)
+        }}
+        onSymbolsChanged={handleSymbolsChanged}
       />
 
       <footer className="status">

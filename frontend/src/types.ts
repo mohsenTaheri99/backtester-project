@@ -27,6 +27,8 @@ export interface SymbolInfo {
   live: boolean // has a data provider, so it can stream and be forward tested
   pricePrecision: number
   bars: number
+  bytes: number // size of the cached CSV on disk
+  days: number // distinct UTC dates holding candles
   from: number | null
   to: number | null
   timeframes: string[]
@@ -179,6 +181,26 @@ export interface RangePlan {
   canDownload: boolean
   missing: { from: number; to: number; credits: number }[]
   credits: number
+}
+
+/** A download running in the background, or the last one that finished. */
+export interface DataJob {
+  kind: 'import' | 'download' | 'update'
+  symbol: string
+  label: string
+  state: 'running' | 'done' | 'error'
+  message: string
+  pagesDone: number
+  pagesTotal: number
+  bars: number
+  padded: number
+  credits: number
+  waitingSeconds: number // >0 while paced by the provider's rate limit
+  startedAt: number | null
+  finishedAt: number | null
+  elapsedSeconds: number
+  error: string | null
+  result: (SymbolInfo & { added?: number; upToDate?: boolean }) | null
 }
 
 export interface ProviderUsage {

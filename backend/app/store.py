@@ -312,6 +312,14 @@ class CandleStore:
             gaps.append((max(start, last), end))
         return [(a, b) for a, b in gaps if b > a]
 
+    def trading_days(self, symbol_id: str) -> int:
+        """Distinct UTC dates that have candles - the honest measure of history,
+        since a span of 90 days holds about 65 once weekends are out."""
+        df = self._base.get(symbol_id)
+        if df is None or df.empty:
+            return 0
+        return int(df.index.normalize().nunique())
+
     def last_bar_time(self, symbol_id: str) -> int | None:
         df = self._base.get(symbol_id)
         return None if df is None or df.empty else int(df.index[-1].timestamp())

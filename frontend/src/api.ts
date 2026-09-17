@@ -1,6 +1,7 @@
 import type {
   BacktestResult,
   CandleResponse,
+  DataJob,
   ForwardState,
   LiveStatus,
   ParamValue,
@@ -74,21 +75,27 @@ export const fetchProviderUsage = () => get<ProviderUsage>('/provider/usage')
 
 export const searchProvider = (q: string) => get<ProviderSymbol[]>('/provider/search', { q })
 
-export const importSymbol = (symbol: string, name: string, exchange: string, type: string) =>
-  send<SymbolInfo>('/symbols', 'POST', { symbol, name, exchange, type })
+export const importSymbol = (
+  symbol: string,
+  name: string,
+  exchange: string,
+  type: string,
+  days: number,
+) => send<DataJob>('/symbols', 'POST', { symbol, name, exchange, type, days })
 
 export const refreshSymbol = (id: string) =>
-  send<SymbolInfo & { added: number }>(`/symbols/${encodeURIComponent(id)}/refresh`, 'POST')
+  send<DataJob>(`/symbols/${encodeURIComponent(id)}/refresh`, 'POST')
 
 export const fetchRangePlan = (id: string, start: number, end: number) =>
   get<RangePlan>(`/symbols/${encodeURIComponent(id)}/range`, { start, end })
 
 export const downloadRange = (id: string, start: number, end: number) =>
-  send<SymbolInfo & { added: number; padded: number; credits: number; upToDate: boolean }>(
-    `/symbols/${encodeURIComponent(id)}/range`,
-    'POST',
-    { start, end },
-  )
+  send<DataJob>(`/symbols/${encodeURIComponent(id)}/range`, 'POST', { start, end })
+
+/** Progress of the running download, polled while one is in flight. */
+export const fetchDataJob = () => get<{ job: DataJob | null }>('/data/job')
+
+export const dismissDataJob = () => send<{ job: DataJob | null }>('/data/job/dismiss', 'POST')
 
 export const deleteSymbol = (id: string) =>
   send<{ removed: string }>(`/symbols/${encodeURIComponent(id)}`, 'DELETE')

@@ -23,6 +23,7 @@ interface Props {
   onToggleVolume: () => void
   onToggleTrades: () => void
   onOpenSettings: () => void
+  onOpenData: () => void
 }
 
 export default function Toolbar({
@@ -45,6 +46,7 @@ export default function Toolbar({
   onToggleVolume,
   onToggleTrades,
   onOpenSettings,
+  onOpenData,
 }: Props) {
   const active = symbols.find((s) => s.id === symbol)
   const canGoLive = Boolean(active?.live)
@@ -168,6 +170,16 @@ export default function Toolbar({
           on {live?.symbol}
         </span>
       )}
+
+      <button
+        type="button"
+        className="icon-button"
+        onClick={onOpenData}
+        title="Chart data - downloaded history, sizes, updates"
+        aria-label="Chart data"
+      >
+        &#9783;
+      </button>
 
       <button
         type="button"

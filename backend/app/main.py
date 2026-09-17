@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 from contextlib import asynccontextmanager
 from dataclasses import fields
 from typing import Any
@@ -20,6 +21,8 @@ from pydantic import BaseModel, Field
 from .backtest import run_backtest
 from .config import DEFAULT_LIMIT, MAX_LIMIT, TIMEFRAMES, Symbol
 from .forward import forward
+from .jobs import Job, jobs
+from .jobs import Job, jobs
 from .live import feed
 from .market_hours import market_for
 from .providers import TwelveData, TwelveDataError
@@ -80,6 +83,8 @@ def timeframes() -> list[str]:
 def _symbol_payload(symbol: Symbol) -> dict:
     coverage = store.coverage(symbol.id)
     return {
+        "bytes": symbol.path.stat().st_size if symbol.path.exists() else 0,
+        "days": store.trading_days(symbol.id),
         "id": symbol.id,
         "name": symbol.name,
         "exchange": symbol.exchange,
@@ -218,6 +223,7 @@ def _precision_for(frame) -> int:
 
 @app.post("/api/symbols")
 def import_symbol(request: ImportRequest) -> dict:
+    """Start the download. Progress and the result arrive via /api/data/job."""
     ticker = request.symbol.strip()
     if not ticker:
         raise HTTPException(400, "symbol is required")
@@ -226,11 +232,31 @@ def import_symbol(request: ImportRequest) -> dict:
     start = end - pd.Timedelta(days=days)
 
     try:
-        frame = _provider().range(ticker, start.to_pydatetime(), end.to_pydatetime(), "1min")
-    except TwelveDataError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        return jobs.start(
+            "import",
+            ticker,
+            f"Importing {ticker} - {days} days",
+            lambda job: _run_import(job, request, ticker, start, end),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+def _run_import(job: Job, request: ImportRequest, ticker: str, start, end) -> dict:
+    client = _provider()
+    client.on_wait = lambda seconds: setattr(job, "waiting_until", time.time() + seconds)
+    job.pages_total = pages_for(start.to_pydatetime(), end.to_pydatetime())
+
+    def progress(pages: int, bars: int) -> None:
+        job.pages_done, job.bars, job.credits = pages, bars, client.requests
+        job.message = f"Downloaded {bars:,} candles"
+
+    frame = client.range(
+        ticker, start.to_pydatetime(), end.to_pydatetime(), "1min", on_page=progress
+    )
+    job.credits = client.requests
     if frame.empty:
-        raise HTTPException(400, f"no 1-minute candles available for '{ticker}'")
+        raise ValueError(f"no 1-minute candles available for {ticker}")
 
     symbol_id = _slug(ticker)
     symbol = Symbol(
@@ -246,10 +272,13 @@ def import_symbol(request: ImportRequest) -> dict:
         fetched_from=int(start.timestamp()),
         fetched_to=int(end.timestamp()),
     )
-    try:
-        store.add_symbol(symbol, frame)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+    raw = len(frame)
+    store.add_symbol(symbol, frame)
+    kept = store.bar_count(symbol_id)
+    job.bars, job.padded = kept, raw - kept
+    job.message = f"Imported {kept:,} candles"
+    if job.padded:
+        job.message += f", dropped {job.padded:,} from the closed market"
     return _symbol_payload(symbol)
 
 
@@ -264,7 +293,7 @@ def refresh_symbol(symbol_id: str) -> dict:
     start = pd.Timestamp(last, unit="s", tz="UTC") if last else end - pd.Timedelta(
         days=int(settings.get("history_days") or 30)
     )
-    return _download(symbol_id, start, end)
+    return _start_download(symbol_id, start, end, f"Updating {symbol_id}")
 
 
 class RangeRequest(BaseModel):
@@ -298,41 +327,93 @@ def range_plan(symbol_id: str, start: int = Query(...), end: int = Query(...)) -
 def download_range(symbol_id: str, request: RangeRequest) -> dict:
     """Download only the parts of a range that are not cached yet."""
     _symbol_or_404(symbol_id)
-    first, last = pd.Timestamp(request.start, unit="s", tz="UTC"), pd.Timestamp(request.end, unit="s", tz="UTC")
+    first = pd.Timestamp(request.start, unit="s", tz="UTC")
+    last = pd.Timestamp(request.end, unit="s", tz="UTC")
     if last <= first:
         raise HTTPException(400, "end must be after start")
-    return _download(symbol_id, first, last)
+    return _start_download(symbol_id, first, last, f"Downloading {symbol_id}")
 
 
-def _download(symbol_id: str, start: pd.Timestamp, end: pd.Timestamp) -> dict:
+def _start_download(symbol_id: str, start: pd.Timestamp, end: pd.Timestamp, label: str) -> dict:
     symbol = _symbol_or_404(symbol_id)
     if not symbol.provider:
-        raise HTTPException(400, f"'{symbol_id}' has no data provider to download from")
+        raise HTTPException(400, f"{symbol_id} has no data provider to download from")
 
     gaps = store.missing_ranges(symbol_id, start, end)
     if not gaps:
-        return {**_symbol_payload(symbol), "added": 0, "credits": 0, "upToDate": True}
+        # Nothing to do and nothing to watch: answer as a job that already ended,
+        # so the UI has one shape to render whether or not work was needed.
+        return {
+            "kind": "download",
+            "symbol": symbol_id,
+            "label": label,
+            "state": "done",
+            "message": "Already cached - no credits spent",
+            "pagesDone": 0,
+            "pagesTotal": 0,
+            "bars": store.bar_count(symbol_id),
+            "padded": 0,
+            "credits": 0,
+            "startedAt": None,
+            "finishedAt": None,
+            "elapsedSeconds": 0,
+            "error": None,
+            "result": {**_symbol_payload(symbol), "added": 0, "upToDate": True},
+        }
 
+    try:
+        return jobs.start("download", symbol_id, label, lambda job: _run_download(job, symbol, gaps))
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+def _run_download(job: Job, symbol: Symbol, gaps: list) -> dict:
     client = _provider()
+    client.on_wait = lambda seconds: setattr(job, "waiting_until", time.time() + seconds)
+    job.pages_total = sum(pages_for(a, b) for a, b in gaps)
     added = 0
+    done_pages = 0
+
     try:
         for gap_start, gap_end in gaps:
-            frame = client.range(symbol.source, gap_start.to_pydatetime(), gap_end.to_pydatetime(), "1min")
-            added += store.merge_bars(symbol_id, frame)
-            store.record_fetch(symbol_id, gap_start, gap_end)
-    except TwelveDataError as exc:
-        # Keep whatever arrived before the failure; the caller can retry the rest.
-        store.clean(symbol_id)
-        raise HTTPException(400, f"{exc} ({added} bars downloaded before it failed)") from exc
 
-    padded = store.clean(symbol_id)
-    return {
-        **_symbol_payload(symbol),
-        "added": added - padded,
-        "padded": padded,
-        "credits": client.requests,
-        "upToDate": False,
-    }
+            def progress(pages: int, bars: int, base: int = done_pages, so_far: int = added) -> None:
+                job.pages_done, job.credits = base + pages, client.requests
+                job.message = f"Downloaded {so_far + bars:,} candles"
+
+            frame = client.range(
+                symbol.source,
+                gap_start.to_pydatetime(),
+                gap_end.to_pydatetime(),
+                "1min",
+                on_page=progress,
+            )
+            added += store.merge_bars(symbol.id, frame)
+            store.record_fetch(symbol.id, gap_start, gap_end)
+            done_pages = job.pages_done
+    except TwelveDataError as exc:
+        # Keep whatever arrived before the failure; the range can be retried.
+        store.clean(symbol.id)
+        raise ValueError(f"{exc} - {added:,} candles were saved before it failed") from exc
+
+    padded = store.clean(symbol.id)
+    job.bars, job.padded, job.credits = added - padded, padded, client.requests
+    job.message = f"Added {job.bars:,} candles"
+    if padded:
+        job.message += f", dropped {padded:,} from the closed market"
+    return {**_symbol_payload(symbol), "added": job.bars, "padded": padded, "upToDate": False}
+
+
+@app.get("/api/data/job")
+def data_job() -> dict:
+    """The running download, or the last finished one, or nothing."""
+    return {"job": jobs.current()}
+
+
+@app.post("/api/data/job/dismiss")
+def dismiss_job() -> dict:
+    jobs.clear()
+    return {"job": jobs.current()}
 
 
 @app.delete("/api/symbols/{symbol_id}")
