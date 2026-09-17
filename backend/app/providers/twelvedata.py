@@ -91,6 +91,15 @@ class TwelveDataError(RuntimeError):
     def is_rate_limit(self) -> bool:
         return self.code == 429
 
+    @property
+    def is_no_data(self) -> bool:
+        """"There is nothing in that window" - which is an answer, not a failure.
+
+        Twelve Data raises this for a window too narrow to hold a complete candle
+        and for one over a closed market, rather than returning an empty list.
+        """
+        return self.code == 400 and "no data is available" in str(self).lower()
+
 
 class TwelveData:
     def __init__(self, api_key: str, credits_per_minute: int = 8) -> None:
@@ -128,7 +137,9 @@ class TwelveData:
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310 - fixed host
                 payload = json.load(response)
         except urllib.error.HTTPError as exc:
-            raise TwelveDataError(f"provider returned HTTP {exc.code}", exc.code) from exc
+            # Their body carries the real reason even on a 4xx; without it the
+            # UI could only say "HTTP 400", which explains nothing.
+            raise TwelveDataError(_http_message(exc), exc.code) from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise TwelveDataError(f"could not reach Twelve Data: {exc}") from exc
 
@@ -192,7 +203,12 @@ class TwelveData:
         for _ in range(max_pages):
             if cursor <= start:
                 break
-            page = self.time_series(symbol, interval, MAX_OUTPUTSIZE, cursor, start)
+            try:
+                page = self.time_series(symbol, interval, MAX_OUTPUTSIZE, cursor, start)
+            except TwelveDataError as exc:
+                if exc.is_no_data:
+                    break  # nothing in this window: an answer, not a failure
+                raise
             if page.empty:
                 break
             frames.append(page)
@@ -261,6 +277,16 @@ class TwelveData:
             }
             for item in (payload.get("data") or [])[:limit]
         ]
+
+
+def _http_message(exc: urllib.error.HTTPError) -> str:
+    """The provider's own wording for an HTTP error, falling back to the code."""
+    try:
+        body = json.loads(exc.read().decode("utf-8", "replace"))
+        message = body.get("message") if isinstance(body, dict) else None
+    except Exception:  # noqa: BLE001 - the body is best-effort
+        message = None
+    return str(message) if message else f"provider returned HTTP {exc.code}"
 
 
 def pages_for(start: datetime, end: datetime, interval_minutes: int = 1) -> int:

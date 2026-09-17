@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 
 import pandas as pd
 
-from .config import MAX_LIMIT, SYMBOLS, TIMEFRAMES, Symbol
+from .config import BASE_TIMEFRAME, MAX_LIMIT, SYMBOLS, TIMEFRAMES, Symbol, timeframe_delta
 from .market_hours import drop_padding, market_for
 from .settings import settings
 
@@ -292,7 +292,12 @@ class CandleStore:
         Only the ends are considered. Holes inside the cached span are weekends
         and market closures, not missing data, and chasing them would spend a
         credit every time to be told the market was shut.
+
+        A gap narrower than two bars is dropped: the provider answers a window
+        that cannot hold a complete candle with an error rather than an empty
+        list, so pressing Update moments after a download would always fail.
         """
+        floor = 2 * timeframe_delta(BASE_TIMEFRAME)
         symbol = self._symbols.get(symbol_id)
         df = self._base.get(symbol_id)
 
@@ -310,7 +315,7 @@ class CandleStore:
             gaps.append((start, min(end, first)))
         if end > last:
             gaps.append((max(start, last), end))
-        return [(a, b) for a, b in gaps if b > a]
+        return [(a, b) for a, b in gaps if b - a >= floor]
 
     def trading_days(self, symbol_id: str) -> int:
         """Distinct UTC dates that have candles - the honest measure of history,

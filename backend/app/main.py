@@ -348,7 +348,7 @@ def _start_download(symbol_id: str, start: pd.Timestamp, end: pd.Timestamp, labe
             "symbol": symbol_id,
             "label": label,
             "state": "done",
-            "message": "Already cached - no credits spent",
+            "message": "Already up to date - no credits spent",
             "pagesDone": 0,
             "pagesTotal": 0,
             "bars": store.bar_count(symbol_id),
