@@ -33,7 +33,7 @@ cd frontend && npm install
 cd ../desktop && npm run dist
 ```
 
-Output: `desktop/release/Gold Backtester-Setup-0.1.0.exe`, a single file to send
+Output: `desktop/release/Gold Backtester-Setup-0.2.0.exe`, a single file to send
 to customers. It installs per user (no admin prompt), adds Start menu and
 desktop shortcuts, and appears in Windows **Apps** with an uninstaller.
 
@@ -64,6 +64,9 @@ upgrades and uninstalls leave it alone.
   press *Test connection* to see the plan and today's credit use.
 - **Rate limit** - requests a minute your plan allows. Downloads are paced to
   it, so a long one cannot die half way with a 429.
+
+The footer of that modal shows the version you are running, so a bug report can
+name the build.
 
 ## Chart data
 
@@ -140,12 +143,17 @@ start time, parameters and candles is state.
 - Candlesticks and volume on `1m 5m 15m 30m 1h 4h 1d 1w`, resampled from 1m
 - Infinite scroll-back, OHLC legend, times in UTC
 - **Drawing tools**: trend line, ray, extended / horizontal / vertical lines,
-  rectangle, brush, text, Fib retracement, long / short position, price range,
+  rectangle, brush, text, Fib retracement, long / short position, and a measure
+  tool (Alt+M) that reports the price change, percentage, bars and duration -
   with magnet, undo and per-symbol saving
-- **Backtest panel**: editable parameters, stats, equity curve, rejection
-  funnel and trade list
+- **Backtest panel**: editable parameters, a test range, stats, equity curve,
+  rejection funnel and trade list
 - **Trades on the chart**: entry / exit markers, outcome boxes, and the full
   risk / reward position tool for the selected trade
+- **Live data and forward testing**: stream the latest candles and paper-trade
+  the strategy on the ones that arrive from now on
+- **Says why a run found nothing**: which filter rejected the most bars, and
+  whether the sample was simply too short
 
 ## The strategy
 
@@ -155,8 +163,10 @@ candle triggers the entry, with premium / discount and London / New York
 session filters, a 1:2 target and break-even at 1R. It is written so no bar
 ever sees future data. Details in [docs/strategy.md](docs/strategy.md).
 
-On the shipped month of data it takes 21 trades (−7.71%) — far too small a
-sample to judge the strategy. It proves the engine, not the edge.
+A month of data produces roughly 20 trades — far too small a sample to judge the
+strategy, and a week often produces none at all. Ninety days or more is a fairer
+test; the Results tab says which filter is doing the rejecting. It proves the
+engine, not the edge.
 
 ## Documentation
 

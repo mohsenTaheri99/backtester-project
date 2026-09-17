@@ -8,10 +8,10 @@ top-level [README](../README.md) is the quickstart; these pages go one level dee
 |---|---|
 | [Architecture](architecture.md) | One process: WebView2 window + backend thread, startup, shutdown, how requests flow |
 | [Desktop build](desktop.md) | PyInstaller + NSIS setup file, scripts, dev mode, size, troubleshooting |
-| [Data](data.md) | The 1-minute CSV, resampling to other timeframes, downloading more history |
-| [Backend](backend.md) | FastAPI routes, the candle store, the backtest runner, caching |
+| [Data](data.md) | The 1-minute CSV, resampling, importing and updating instruments, invented candles |
+| [Backend](backend.md) | FastAPI routes, settings, the candle store, downloads, live and forward, the backtest runner |
 | [Strategy](strategy.md) | The ICT liquidity-sweep strategy, the no-lookahead rule, adding a strategy |
-| [Frontend](frontend.md) | React app state, components, the chart, scroll-back paging, trade overlays |
+| [Frontend](frontend.md) | React app state, components, the chart's viewport rules, trade overlays |
 | [Drawing tools](drawing-tools.md) | TradingView-style drawing tools: how they are stored, drawn and edited |
 | [Development](development.md) | Setup, running, checks, conventions, common tasks |
 
@@ -25,14 +25,20 @@ backtester project/
 │   ├── installer.nsi          NSIS setup file script
 │   ├── assets/                icon.ico, icon.png
 │   ├── scripts/               build (npm run dist), dev, make-icon
-│   └── package.json           scripts + app version
+│   └── package.json           npm scripts; its version is synced from config.py
 ├── backend/
 │   ├── desktop_app.py         app entry point: WebView2 window + backend thread
 │   ├── requirements.txt       incl. pywebview and PyInstaller
 │   ├── app/
 │   │   ├── main.py            FastAPI routes
-│   │   ├── config.py          symbols, timeframes, limits
-│   │   ├── store.py           CSV loading + resampling cache
+│   │   ├── config.py          APP_VERSION, paths, timeframes, limits
+│   │   ├── settings.py        user settings + the symbol catalogue on disk
+│   │   ├── store.py           CSV loading, merging, resampling cache
+│   │   ├── providers/         market data clients (twelvedata.py)
+│   │   ├── market_hours.py    drops candles invented while the market is shut
+│   │   ├── jobs.py            one background download, with progress
+│   │   ├── live.py            live candle poller
+│   │   ├── forward.py         forward (paper) testing on live candles
 │   │   ├── backtest.py        runs backtesting.py, shapes the JSON result
 │   │   └── strategies/
 │   │       ├── __init__.py    strategy registry
@@ -43,10 +49,15 @@ backtester project/
     └── src/
         ├── App.tsx            top-level state and wiring
         ├── api.ts, types.ts   typed API client
-        ├── components/        Chart, Toolbar, Legend, BacktestPanel, EquityChart, DrawingToolbar
+        ├── components/        Chart, Toolbar, Legend, BacktestPanel, RangeSelector,
+        │                      DataModal, SettingsModal, ForwardSection, EquityChart,
+        │                      DrawingToolbar, Stat
         └── lib/
             ├── theme.ts       colours + chart options
             ├── markers.ts     trade markers, timeframe seconds
             ├── tradeZones.ts  risk/reward boxes for backtest trades
+            ├── format.ts      numbers, prices, durations, sizes
+            ├── useDataJob.ts  watches a running download
+            ├── useTicker.ts   clock for "3s ago" labels
             └── drawings/      drawing tools (types, layer, controller, persistence)
 ```

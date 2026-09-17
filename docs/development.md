@@ -73,8 +73,8 @@ Identical backtest requests are cached until the app restarts.
 | Task | Where |
 |---|---|
 | Add a timeframe | `TIMEFRAMES` in `backend/app/config.py` + `TIMEFRAME_SECONDS` in `frontend/src/lib/markers.ts` |
-| Add an instrument | CSV in `backend/data/` + `SYMBOLS` in `config.py` — see [Data](data.md) |
-| Refresh data | Settings -> Market data -> **Update**, or pick a range in the setup tab |
+| Add an instrument | Toolbar -> **Chart data** -> search and **Add** — see [Data](data.md) |
+| Refresh data | Toolbar -> **Chart data** -> **Update**, or pick a range in the setup tab |
 | Expose a strategy parameter in the UI | `PARAM_UI` in `ict_sweep.py` |
 | Add a strategy | [Strategy → Adding a strategy](strategy.md#adding-a-strategy) |
 | Add a drawing tool | [Drawing tools → Adding a tool](drawing-tools.md#adding-a-tool) |
@@ -82,10 +82,20 @@ Identical backtest requests are cached until the app restarts.
 | Change window size or title | `webview.create_window(...)` in `backend/desktop_app.py` |
 | Change the icon | `desktop/scripts/make-icon.mjs`, then `npm run icon` |
 | Change installer text, shortcuts, publisher | `desktop/installer.nsi` |
-| Release a new version | bump `version` in `desktop/package.json`, then `npm run dist` |
+| Add a setting | one `SettingDef` in `backend/app/settings.py` |
+| Add a market data provider | a client in `backend/app/providers/`, shaped like `twelvedata.py` |
+| Release a new version | bump `APP_VERSION` in `backend/app/config.py`, then `npm run dist` |
+
+## Versioning
+
+`APP_VERSION` in `backend/app/config.py` is the only place the version is
+written. The running app reports it on `/api/health` and shows it in the footer
+of the Settings modal, and `npm run dist` reads it for the setup file name and
+the installer, rewriting `desktop/package.json` when it has fallen behind. Tag a
+release as `v<version>`.
 
 ## Git
 
 Ignored: `node_modules/`, `dist/`, `__pycache__/`, `*.tsbuildinfo`, `.venv/`,
-`desktop/build/`, `desktop/release/`. The data CSV **is** committed, so a fresh
-clone can build the app without downloading anything.
+`desktop/build/`, `desktop/release/`. No market data is committed - a clone
+builds the app, and a Twelve Data key fills the chart.

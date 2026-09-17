@@ -14,7 +14,7 @@ desktop/
 │   ├── build.mjs          the whole build (npm run dist)
 │   ├── dev.mjs            dev mode: Vite + app window
 │   └── make-icon.mjs      draws the icons
-├── package.json           scripts and the app version
+├── package.json           npm scripts; its version is synced from config.py
 ├── build/                 (generated) PyInstaller work + app folder
 └── release/               (generated) the setup file
 ```
@@ -56,13 +56,17 @@ Run from `desktop/`:
 3. PyInstaller on `backend/desktop_app.py`:
    - `--onedir --windowed` — a folder app with no console window. One-file mode
      would unpack itself to a temp folder on every launch.
-   - `--add-data` for `frontend/dist` → `frontend/` and `backend/data` → `data/`.
+   - `--add-data` for `frontend/dist` → `frontend/`. No market data is bundled;
+     candles live in `%LOCALAPPDATA%\GoldBacktester\data`.
    - `--collect-submodules app` — the FastAPI app is imported inside a function.
    - Excludes bokeh and its dependencies (see
      [Architecture → Why no bokeh](architecture.md#why-no-bokeh)), pywebview's
      non-Windows GUI backends, and tkinter / matplotlib / IPython.
-4. `makensis installer.nsi` with the version from `desktop/package.json`,
-   producing `release/Gold Backtester-Setup-<version>.exe`.
+4. `makensis installer.nsi` with `APP_VERSION` from `backend/app/config.py` -
+   the one place the version is written - producing
+   `release/Gold Backtester-Setup-<version>.exe`. `desktop/package.json` is
+   rewritten to match when it has fallen behind, so npm and NSIS never
+   disagree about the build.
 
 ## Size
 
@@ -86,7 +90,7 @@ Electron build of the same app was 147 MB, because it shipped its own Chromium.
 - Closes a running copy before installing or uninstalling, and removes files
   from an older version on upgrade.
 - Uninstalling keeps user data in `%LOCALAPPDATA%\GoldBacktester` (drawings, logs).
-- Silent install for IT: `"Gold Backtester-Setup-0.1.0.exe" /S` (optionally `/D=C:\path`, last argument).
+- Silent install for IT: `"Gold Backtester-Setup-0.2.0.exe" /S` (optionally `/D=C:\path`, last argument).
 
 ## Dev mode
 
@@ -103,10 +107,15 @@ installed app's.
 
 ## Releasing a new version
 
-1. Bump `version` in `desktop/package.json`.
+1. Bump `APP_VERSION` in `backend/app/config.py`.
 2. `npm run dist`.
-3. Send `release/Gold Backtester-Setup-<version>.exe`. Installing over an older
-   version upgrades it in place and keeps the customer's drawings.
+3. Tag it: `git tag -a v<version> -m "..."` and push the tag.
+4. Send `release/Gold Backtester-Setup-<version>.exe`. Installing over an older
+   version upgrades it in place and keeps the customer's drawings, settings and
+   downloaded candles.
+
+The installed build shows its version in the footer of the Settings modal, so a
+customer reporting a problem can say which one they are on.
 
 ## Troubleshooting
 

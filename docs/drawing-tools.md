@@ -19,9 +19,9 @@ and are wired up in `Chart.tsx` and `App.tsx`.
 | Shapes | Rectangle | two points | Alt+Shift+R |
 | | Brush (freehand) | drag | |
 | Text | Text label | one click, then type | |
+| Measure | Measure (price change, %, bars, duration) | two points | Alt+M |
 | Prediction | Long position | one click (2R box) | |
 | | Short position | one click (2R box) | |
-| | Price / date range | two points | |
 
 - **Two-point tools**: click, move, click — or press, drag, release.
 - After placing a drawing the tool returns to the cursor.
@@ -30,6 +30,10 @@ and are wired up in `Chart.tsx` and `App.tsx`.
   chart changes its colour, edits text or deletes it.
 - **Double-click** a text label to edit it. Enter saves, Esc cancels; an empty
   label is removed.
+- **Measure** has its own slot in the rail rather than sitting inside the
+  position tools' flyout, where nothing could find it. Its box is coloured by
+  direction - green up, red down - and outlined, because direction is the first
+  thing wanted from a measurement.
 - **Magnet** snaps points to the nearest open/high/low/close of the bar.
 - **Eye** hides or shows all drawings. **Undo** (Ctrl+Z) reverts the last
   change. **Trash** removes every drawing on the symbol.
@@ -68,6 +72,14 @@ Points per type:
 
 `TOOLS` holds each tool's label, shortcut, placement style
 (`one-click` / `two-point` / `freehand`) and default colour.
+
+`GROUPS` in `DrawingToolbar.tsx` decides the rail: one button per group, showing
+the tool last picked from it, with the rest in a flyout. A tool armed by
+keyboard shortcut becomes its group's face. The icons are drawn on a consistent
+grid - anchors are hollow rings, the way TradingView marks a draggable end, and
+rays carry arrowheads so they read as open-ended. The rings are genuinely
+unfilled rather than filled with the panel colour, since the buttons have their
+own background when hovered and when active.
 
 ### Why anchors are time + price, not bar index
 

@@ -69,14 +69,27 @@ otherwise                         → buy/sell with sl, tp and a tag
 ```
 
 The rejection counters are returned as `rejections` and shown in the Results
-tab as a funnel. Each 1m bar is counted once, at the first filter that stops it.
+tab as a funnel. Each 1m bar is counted once, at the first filter that stops it -
+which is also what lets the UI explain a run that found nothing by naming the
+filter that rejected the most bars.
+
+A forward test runs this same loop, with `start_trading_at` set to the moment the
+session began: earlier bars build the bias and the sweeps, but no trade may open
+on a bar that had already printed.
 
 ## A word on results
 
-The shipped data is about a month of 1m bars, which produces around 20 trades.
-That is far too few to judge the strategy — with a 1:2 target the break-even win
-rate is roughly 33–38%, and hundreds of trades are needed for a verdict. Treat
-the output as proof the engine works, not as evidence about the edge.
+How much data you test on decides what the output is worth. A month of 1m bars
+produces roughly 20 trades - far too few to judge anything. With a 1:2 target
+the break-even win rate is about 33-38%, and hundreds of trades are needed for a
+verdict. Treat the output as proof the engine works, not as evidence about the
+edge.
+
+A short sample often produces **no** trades at all, because a 1h break of
+structure, a 15m sweep and a session window rarely coincide inside a week. That
+is not a broken strategy, and the Results tab says so: it names the filter that
+rejected the most bars and how many trading days were actually tested. Ninety
+days is a fairer test.
 
 ## Adding a strategy
 

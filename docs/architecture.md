@@ -15,10 +15,13 @@ with Microsoft Edge WebView2.
 │         │  page + fetch('/api/…')   (same origin)                          │
 │         ▼                                                                  │
 │  backend thread: uvicorn → FastAPI (backend/app/main.py)                   │
-│    /api/*  candles, strategies, backtests                                  │
+│    /api/*  candles, settings, downloads, live, forward, backtests          │
 │    /       built React UI (StaticFiles, FRONTEND_DIR)                      │
 │    USER_DATA_DIR ─► imported 1m CSVs loaded at startup                     │
+│    + a download thread (jobs.py) and the live poller (live.py)             │
 └────────────────────────────────────────────────────────────────────────────┘
+   %LOCALAPPDATA%\GoldBacktester\data      imported 1m CSVs
+   %LOCALAPPDATA%\GoldBacktester\settings.json  settings + symbol catalogue
    %LOCALAPPDATA%\GoldBacktester\webview   WebView2 profile: localStorage (drawings)
    %LOCALAPPDATA%\GoldBacktester\logs      app.log (the exe has no console)
 ```
@@ -92,13 +95,26 @@ and everything only it needs (PIL, tornado, jinja2, …), saving about 35 MB.
 3. Near the left edge: `GET /api/candles?...&before=<oldest bar time>`, spliced
    in front without moving the viewport.
 
+### Downloading candles
+
+1. `POST /api/symbols` (import) or `POST /api/symbols/{id}/range` starts a job
+   on its own thread and returns immediately.
+2. The window polls `GET /api/data/job` for progress: requests done, candles so
+   far, credits spent, and a countdown while the rate limiter holds a request.
+3. Closing the window cancels nothing - the job belongs to the backend, and
+   reopening picks its progress back up.
+
 ### Running a backtest
 
 1. `POST /api/backtest {strategyId, symbol, params}`.
 2. The backend builds the strategy's higher-timeframe context, runs
    backtesting.py bar by bar on 1m, and shapes the result.
 3. Identical requests come from an in-memory cache.
-4. The UI draws trades on the chart and fills the Results and Trades tabs.
+4. The UI draws trades on the chart and fills the Results and Trades tabs -
+   or, when nothing matched, explains which filter rejected the most bars.
+
+The store's version is part of the cache key, so a live candle arriving
+invalidates a cached result rather than letting it go stale.
 
 ## Time conventions
 
