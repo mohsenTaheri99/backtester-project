@@ -31,6 +31,9 @@ async function get<T>(path: string, params: Record<string, string | number | und
   return response.json() as Promise<T>
 }
 
+/** Also carries the app version, which Settings shows. */
+export const fetchHealth = () => get<{ status: string; version: string }>('/health')
+
 export const fetchSymbols = () => get<SymbolInfo[]>('/symbols')
 
 export const fetchCandles = (

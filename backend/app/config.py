@@ -7,6 +7,11 @@ from pathlib import Path
 
 import pandas as pd
 
+# The one place the app version lives. desktop/scripts/build.mjs reads it from
+# here for the setup file name and the installer, and the UI shows it in
+# Settings, so a customer reporting a bug can say which build they are on.
+APP_VERSION = "0.2.0"
+
 DATA_DIR = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
 
 # Everything the user creates - settings, downloaded candles - lives outside the

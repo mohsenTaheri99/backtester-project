@@ -16,7 +16,7 @@
  *   BACKTESTER_OUT_DIR    where the setup file goes (default: desktop/release)
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,10 +29,34 @@ const buildDir = path.resolve(process.env.BACKTESTER_BUILD_DIR ?? path.join(desk
 const outDir = path.resolve(process.env.BACKTESTER_OUT_DIR ?? path.join(desktopDir, 'release'))
 
 const win = process.platform === 'win32'
-const { version } = JSON.parse(readFileSync(path.join(desktopDir, 'package.json'), 'utf8'))
+// The version lives in backend/app/config.py, because the running app has to be
+// able to report it. Everything else - the setup file name, the installer, npm's
+// metadata - follows from there, so there is only ever one place to bump.
+const version = readVersion()
+syncPackageVersion(version)
 const venvPython = path.join(backendDir, '.venv', win ? 'Scripts/python.exe' : 'bin/python')
 const appName = 'GoldBacktester'
 const setupFile = path.join(outDir, `Gold Backtester-Setup-${version}.exe`)
+
+function readVersion() {
+  const config = readFileSync(path.join(backendDir, 'app', 'config.py'), 'utf8')
+  const match = config.match(/^APP_VERSION\s*=\s*["']([^"']+)["']/m)
+  if (!match) {
+    console.error('APP_VERSION not found in backend/app/config.py')
+    process.exit(1)
+  }
+  return match[1]
+}
+
+/** Keeps package.json honest; npm and NSIS should not disagree about the build. */
+function syncPackageVersion(next) {
+  const file = path.join(desktopDir, 'package.json')
+  const raw = readFileSync(file, 'utf8')
+  const current = JSON.parse(raw).version
+  if (current === next) return
+  writeFileSync(file, raw.replace(/("version":\s*)"[^"]+"/, `$1"${next}"`))
+  console.log(`package.json version ${current} -> ${next} (from config.py)`)
+}
 
 // Keep pip / PyInstaller scratch files next to the build instead of the system temp dir.
 const tmpDir = path.join(buildDir, 'tmp')

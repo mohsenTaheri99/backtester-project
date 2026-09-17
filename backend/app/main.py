@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .backtest import run_backtest
-from .config import DEFAULT_LIMIT, MAX_LIMIT, TIMEFRAMES, Symbol
+from .config import APP_VERSION, DEFAULT_LIMIT, MAX_LIMIT, TIMEFRAMES, Symbol
 from .forward import forward
 from .jobs import Job, jobs
 from .jobs import Job, jobs
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Backtester Data API",
-    version="0.2.0",
+    version=APP_VERSION,
     description="Serves OHLCV candles, backtests, live candles and forward tests.",
     lifespan=lifespan,
 )
@@ -71,6 +71,7 @@ def _provider() -> TwelveData:
 def health() -> dict:
     return {
         "status": "ok",
+        "version": APP_VERSION,
         "symbols": [s.id for s in store.loaded_symbols()],
     }
 

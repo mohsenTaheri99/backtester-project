@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchProviderUsage, fetchSettings, saveSettings } from '../api'
+import { fetchHealth, fetchProviderUsage, fetchSettings, saveSettings } from '../api'
 import type { ParamValue, ProviderUsage, SettingDef, SettingsSchema } from '../types'
 
 interface Props {
@@ -106,6 +106,8 @@ export default function SettingsModal({ open, onClose, onSaved, onOpenData }: Pr
   const [error, setError] = useState<string | null>(null)
   const [usage, setUsage] = useState<ProviderUsage | null>(null)
   const [testing, setTesting] = useState(false)
+  // Asked for once, not on every open: the build cannot change while it runs.
+  const [version, setVersion] = useState('')
 
   const load = useCallback(() => {
     fetchSettings()
@@ -119,6 +121,13 @@ export default function SettingsModal({ open, onClose, onSaved, onOpenData }: Pr
   useEffect(() => {
     if (open) load()
   }, [open, load])
+
+  useEffect(() => {
+    if (!open || version) return
+    fetchHealth()
+      .then((health) => setVersion(health.version))
+      .catch(() => undefined)  // the footer just stays a placeholder
+  }, [open, version])
 
   useEffect(() => {
     if (!open) return
@@ -255,7 +264,7 @@ export default function SettingsModal({ open, onClose, onSaved, onOpenData }: Pr
 
         <footer className="modal-foot">
           <span className="dim small" title={schema?.file}>
-            Stored on this PC
+            Gold Backtester {version || '…'} · settings stored on this PC
           </span>
           <div className="spacer" />
           <button type="button" className="ghost" onClick={onClose}>
