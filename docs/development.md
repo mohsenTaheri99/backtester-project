@@ -41,14 +41,13 @@ npm run build       # typecheck + production bundle
 ```
 
 There is no automated test suite yet. For backend changes, run a backtest
-directly and compare with the previous result:
+directly and compare with the previous result. Pass whichever symbol you have
+imported - nothing ships with the app, so there is no fixed expected number:
 
 ```bash
 cd backend
-.venv/Scripts/python -c "from app.store import store; store.load(); from app.backtest import run_backtest; r = run_backtest('ict_sweep', 'XAUUSD', {}); print(r['summary']['trades'], r['summary']['returnPct'])"
+.venv/Scripts/python -c "from app.settings import settings; settings.load(); from app.store import store; store.load(); from app.backtest import run_backtest; r = run_backtest('ict_sweep', 'XAUUSD-TD', {}); print(r['summary']['trades'], r['summary']['returnPct'])"
 ```
-
-On the shipped data this prints `21 -7.708559`.
 
 To poke at the API, open its Swagger page in a browser while the app runs:
 http://127.0.0.1:17800/docs (http://127.0.0.1:8765/docs in dev mode).
