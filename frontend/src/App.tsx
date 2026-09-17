@@ -52,6 +52,10 @@ export default function App() {
   const [symbol, setSymbol] = useState('')  // nothing until a symbol is imported
   const [timeframe, setTimeframe] = useState('5m')
   const [candles, setCandles] = useState<Candle[]>([])
+  // Which series the candles in hand belong to. Kept apart from `symbol`/
+  // `timeframe`, which change the moment the user clicks: the chart must not be
+  // told a series changed while it is still holding the previous one's bars.
+  const [candlesKey, setCandlesKey] = useState('')
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -87,6 +91,9 @@ export default function App() {
 
   // Guards the scroll-back loader against overlapping requests.
   const loadingMoreRef = useRef(false)
+  // Read inside callbacks that outlive the render that created them.
+  const candlesKeyRef = useRef('')
+  candlesKeyRef.current = candlesKey
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -174,8 +181,10 @@ export default function App() {
   // Load the most recent page whenever the series changes.
   useEffect(() => {
     let cancelled = false
+    const key = `${symbol}:${timeframe}`
     if (!symbol) {
       setCandles([])
+      setCandlesKey('')
       setHasMore(false)
       setLoading(false)
       return
@@ -188,12 +197,14 @@ export default function App() {
       .then((res) => {
         if (cancelled) return
         setCandles(res.candles)
+        setCandlesKey(key)
         setHasMore(res.hasMore)
       })
       .catch((err: Error) => {
         if (!cancelled) {
           setError(err.message)
           setCandles([])
+          setCandlesKey(key) // stay consistent: no candles, but for this series
         }
       })
       .finally(() => {
@@ -211,9 +222,12 @@ export default function App() {
     if (!liveTick) return
     let cancelled = false
 
+    const key = `${symbol}:${timeframe}`
     fetchCandles(symbol, timeframe, { limit: 3 })
       .then((res) => {
-        if (cancelled || !res.candles.length) return
+        // A timeframe switch may have landed meanwhile; merging 1m bars into an
+        // hourly series would corrupt it.
+        if (cancelled || !res.candles.length || key !== candlesKeyRef.current) return
         setCandles((current) => {
           if (!current.length) return res.candles
           const merged = [...current]
@@ -430,7 +444,7 @@ export default function App() {
               </div>
             ) : (
               <Chart
-                seriesKey={`${symbol}:${timeframe}`}
+                seriesKey={candlesKey}
                 candles={candles}
                 pricePrecision={precision}
                 showVolume={showVolume}

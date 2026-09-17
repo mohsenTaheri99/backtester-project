@@ -223,11 +223,13 @@ export default function Chart({
     const volumeSeries = volumeSeriesRef.current
     if (!chart || !candleSeries || !volumeSeries) return
 
-    // A new symbol/timeframe is a fresh series, never a prepend.
-    const sameSeries = prevSeriesKeyRef.current === seriesKey
+    // Three different things can land here, and each wants the viewport treated
+    // differently. `seriesKey` names the series these candles belong to, not the
+    // one being loaded, so a switch is only seen once its data has arrived.
+    const seriesChanged = prevSeriesKeyRef.current !== seriesKey
     const firstTime = candles.length ? candles[0].time : null
     const prepended =
-      sameSeries &&
+      !seriesChanged &&
       prevFirstTimeRef.current !== null &&
       firstTime !== null &&
       firstTime < prevFirstTimeRef.current
@@ -238,13 +240,7 @@ export default function Chart({
     candleSeries.setData(candles.map(toCandlestick))
     volumeSeries.setData(candles.map(toVolume))
 
-    if (prepended && visibleBefore) {
-      // Older bars shift every logical index right by `added`; keep the viewport still.
-      chart.timeScale().setVisibleLogicalRange({
-        from: visibleBefore.from + added,
-        to: visibleBefore.to + added,
-      })
-    } else if (!prepended) {
+    if (seriesChanged) {
       // Open on the most recent slice rather than fitting everything, so the
       // first paint does not sit at the left edge and trigger a page load.
       const visible = Math.min(candles.length, INITIAL_BARS)
@@ -252,7 +248,15 @@ export default function Chart({
         from: candles.length - visible,
         to: candles.length + 4,
       })
+    } else if (prepended && visibleBefore) {
+      // Older bars shift every logical index right by `added`; keep the viewport still.
+      chart.timeScale().setVisibleLogicalRange({
+        from: visibleBefore.from + added,
+        to: visibleBefore.to + added,
+      })
     }
+    // Otherwise a bar was appended or the forming one was revised: leave the
+    // viewport exactly where the user put it, rather than snapping to the end.
 
     prevFirstTimeRef.current = firstTime
     prevLengthRef.current = candles.length
