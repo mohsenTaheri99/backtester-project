@@ -40,6 +40,20 @@ desktop shortcuts, and appears in Windows **Apps** with an uninstaller.
 The build is unsigned, so Windows SmartScreen shows "Windows protected your
 PC" on first run: click **More info → Run anyway**.
 
+## Release a new version
+
+Bump `APP_VERSION` in `backend/app/config.py`, commit, then push a matching
+`v<version>` tag:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+The [Release workflow](.github/workflows/release.yml) builds the setup file on a
+Windows runner and attaches it to the GitHub release for that tag. The tag has
+to match `APP_VERSION`, or the build stops before it starts.
+
 ## Develop
 
 ```bash
@@ -173,7 +187,7 @@ engine, not the edge.
 | Page | Covers |
 |---|---|
 | [Architecture](docs/architecture.md) | The single-process app: window, backend thread, startup and shutdown |
-| [Desktop build](docs/desktop.md) | PyInstaller + NSIS packaging, dev mode, size, troubleshooting |
+| [Desktop build](docs/desktop.md) | PyInstaller + NSIS packaging, dev mode, releases, size, troubleshooting |
 | [Data](docs/data.md) | The CSV, resampling, getting more history |
 | [Backend](docs/backend.md) | API routes, candle store, backtest runner |
 | [Strategy](docs/strategy.md) | Rules, no-lookahead design, adding a strategy |

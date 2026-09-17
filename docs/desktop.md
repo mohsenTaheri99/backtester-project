@@ -68,6 +68,29 @@ Run from `desktop/`:
    rewritten to match when it has fallen behind, so npm and NSIS never
    disagree about the build.
 
+## Releases
+
+`.github/workflows/release.yml` runs the same `npm run dist` on a
+`windows-latest` runner and publishes the result.
+
+1. Bump `APP_VERSION` in `backend/app/config.py` and commit it.
+2. `git tag v<version> && git push origin v<version>`.
+
+The workflow then:
+
+- checks the tag against `APP_VERSION` and fails early if they disagree, so a
+  release can never name a version the app itself does not report;
+- installs Node 22, Python 3.12 and NSIS (`choco install nsis`; `MAKENSIS` is
+  passed to `build.mjs`), and runs `npm ci` in `frontend/`;
+- builds `release/Gold Backtester-Setup-<version>.exe`, keeps it as a run
+  artifact for 30 days, and creates the GitHub release for the tag with the
+  setup file attached and the commits since the previous tag as notes.
+
+A tag with a suffix (`v0.3.0-rc1`) is published as a pre-release. Re-running the
+workflow on a tag that already has a release replaces the attached setup file
+instead of failing. Running it by hand from the **Actions** tab builds the setup
+file and leaves it as a run artifact without creating a release.
+
 ## Size
 
 | | Size |

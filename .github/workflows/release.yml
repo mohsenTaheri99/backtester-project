@@ -1,0 +1,163 @@
+# Builds the Windows setup file and publishes it as a GitHub Release.
+#
+# Push a tag that matches APP_VERSION in backend/app/config.py:
+#
+#   git tag v0.3.0 && git push origin v0.3.0
+#
+# The run builds `desktop/release/Gold Backtester-Setup-<version>.exe` and
+# attaches it to the release for that tag. Running the workflow by hand
+# (Actions -> Release -> Run workflow) builds the same file and leaves it as a
+# run artifact, without touching releases - useful to check a build first.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows setup file
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # release notes list the commits since the previous tag
+
+      - name: Read the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^APP_VERSION[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' backend/app/config.py)
+          if [ -z "$version" ]; then
+            echo "::error file=backend/app/config.py::APP_VERSION not found"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "App version: $version"
+
+          # A tag build must agree with the version the app reports about itself,
+          # otherwise the setup file and the release would name different builds.
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error file=backend/app/config.py::Tag $GITHUB_REF_NAME does not match APP_VERSION $version. Bump APP_VERSION to ${GITHUB_REF_NAME#v} (or retag as v$version) and push again."
+            exit 1
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Make sure NSIS is installed
+        shell: bash
+        run: |
+          set -euo pipefail
+          makensis="/c/Program Files (x86)/NSIS/makensis.exe"
+          if [ ! -x "$makensis" ]; then
+            choco install nsis --no-progress -y
+          fi
+          # MSYS_NO_PATHCONV: without it Git Bash rewrites the /VERSION switch
+          # into a file path and makensis tries to open it as a script.
+          MSYS_NO_PATHCONV=1 "$makensis" /VERSION
+          echo 'MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe' >> "$GITHUB_ENV"
+
+      - name: Build the setup file
+        run: npm run dist
+        working-directory: desktop
+
+      - name: Locate the setup file
+        id: setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="desktop/release/Gold Backtester-Setup-${{ steps.version.outputs.version }}.exe"
+          if [ ! -f "$file" ]; then
+            echo "::error::$file was not produced by the build"
+            ls -l desktop/release || true
+            exit 1
+          fi
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+          ls -lh "$file"
+
+      - name: Upload the setup file as a run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoldBacktester-Setup-${{ steps.version.outputs.version }}
+          path: ${{ steps.setup.outputs.file }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Write the release notes
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          previous=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+
+          {
+            echo "**Gold Backtester $version** for Windows 10/11."
+            echo
+            echo "Download \`Gold.Backtester-Setup-$version.exe\` below and run it. It installs"
+            echo "for the current user (no admin prompt). The build is unsigned, so SmartScreen"
+            echo "shows \"Windows protected your PC\" on first run: **More info -> Run anyway**."
+            echo
+            echo "## Changes"
+            echo
+            if [ -n "$previous" ]; then
+              git log --no-merges --pretty='- %s' "$previous..$GITHUB_REF_NAME"
+              echo
+              echo "[Full diff](${{ github.server_url }}/${{ github.repository }}/compare/$previous...$GITHUB_REF_NAME)"
+            else
+              git log --no-merges --pretty='- %s' -20 "$GITHUB_REF_NAME"
+            fi
+          } > release-notes.md
+
+          cat release-notes.md
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="${{ steps.version.outputs.version }}"
+          file="${{ steps.setup.outputs.file }}"
+          args=(--title "Gold Backtester $version" --notes-file release-notes.md)
+          # A tag like v0.3.0-rc1 is a pre-release; v0.3.0 is not.
+          case "$tag" in *-*) args+=(--prerelease);; esac
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Re-running the workflow for an existing tag replaces the setup file.
+            gh release upload "$tag" "$file" --clobber
+          else
+            gh release create "$tag" "$file" "${args[@]}"
+          fi
+          gh release view "$tag" --json url --jq .url

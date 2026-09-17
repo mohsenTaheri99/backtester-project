@@ -7,7 +7,7 @@ top-level [README](../README.md) is the quickstart; these pages go one level dee
 | Page | Covers |
 |---|---|
 | [Architecture](architecture.md) | One process: WebView2 window + backend thread, startup, shutdown, how requests flow |
-| [Desktop build](desktop.md) | PyInstaller + NSIS setup file, scripts, dev mode, size, troubleshooting |
+| [Desktop build](desktop.md) | PyInstaller + NSIS setup file, scripts, dev mode, releases, size, troubleshooting |
 | [Data](data.md) | The 1-minute CSV, resampling, importing and updating instruments, invented candles |
 | [Backend](backend.md) | FastAPI routes, settings, the candle store, downloads, live and forward, the backtest runner |
 | [Strategy](strategy.md) | The ICT liquidity-sweep strategy, the no-lookahead rule, adding a strategy |
