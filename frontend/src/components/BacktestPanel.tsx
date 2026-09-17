@@ -56,6 +56,47 @@ const rejectionLabel = (reason: string, pinTimeframe: string) =>
     ? `no ${pinTimeframe} pin or 1m engulfing`
     : REJECTION_LABELS[reason] ?? reason
 
+/** Trading days a run covered, weekends already dropped from the data. */
+const testedDays = (result: BacktestResult) =>
+  Math.max(1, Math.round((result.range.bars - result.range.warmupBars) / 1440))
+
+/**
+ * Why a run found nothing. Zero trades reads as a broken strategy, when it is
+ * almost always a sample too short for a 1h break of structure, a 15m sweep and
+ * a session window to coincide.
+ */
+function NoTrades({ result, pinTimeframe }: { result: BacktestResult; pinTimeframe: string }) {
+  const days = testedDays(result)
+  const ranked = Object.entries(result.rejections).sort((a, b) => b[1] - a[1])
+  const [reason, count] = ranked[0] ?? ['', 0]
+
+  return (
+    <div className="no-trades">
+      <b>No setups matched.</b>
+      {count > 0 && (
+        <p className="dim small">
+          The filter that rejected most bars was{' '}
+          <b>{rejectionLabel(reason, pinTimeframe)}</b> — {count.toLocaleString()} of{' '}
+          {(result.range.bars - result.range.warmupBars).toLocaleString()} bars.
+        </p>
+      )}
+      {days < 30 ? (
+        <p className="warn small">
+          Only {days} trading day{days === 1 ? '' : 's'} were tested. This strategy needs a 1h
+          break of structure, a 15m liquidity sweep and a London or New York session window to
+          line up, which rarely happens in a sample this short — 90 days or more is a fairer
+          test. Download more history in <b>Chart data</b>.
+        </p>
+      ) : (
+        <p className="dim small">
+          {days} trading days were tested, so the sample is not the problem. Loosening a filter —
+          the sweep window, the session filter or premium / discount — is the next thing to try.
+        </p>
+      )}
+    </div>
+  )
+}
+
 const EXIT_LABELS: Record<string, string> = {
   take_profit: 'TP',
   stop_loss: 'SL',
@@ -232,6 +273,10 @@ export default function BacktestPanel({
             <p className="dim small">Run the backtest to see results.</p>
           ) : (
             <>
+              {summary.trades === 0 && (
+                <NoTrades result={result} pinTimeframe={resultPinTimeframe} />
+              )}
+
               <div className="stat-grid">
                 <Stat
                   label="Return"
@@ -309,7 +354,10 @@ export default function BacktestPanel({
           {!result ? (
             <p className="dim small">Run the backtest to see trades.</p>
           ) : result.trades.length === 0 ? (
-            <p className="dim small">No setups matched these rules on this data.</p>
+            <p className="dim small">
+              No setups matched these rules on this data — the <b>results</b> tab says which
+              filter rejected the most bars.
+            </p>
           ) : (
             <table className="trades">
               <thead>

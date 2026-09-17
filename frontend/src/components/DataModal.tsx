@@ -241,8 +241,16 @@ export default function DataModal({
           </div>
           <p className="field-help">
             One request covers about 3.5 days, so {days} days costs roughly{' '}
-            {Math.max(1, Math.ceil((days * DAY) / (5000 * 60)))} credits.
+            {Math.max(1, Math.ceil((days * DAY) / (5000 * 60)))} credits. Weekends are dropped,
+            so {days} days holds roughly {Math.round((days * 5) / 7)} trading days.
           </p>
+          {days < 30 && (
+            <p className="warn small">
+              That is a short sample. A strategy waiting on a higher-timeframe break of structure
+              and a session window may find no trades at all in it — 90 days or more gives a
+              fairer test.
+            </p>
+          )}
 
           {matches && (
             <table className="mini-table">

@@ -1322,3 +1322,17 @@ body {
   border-radius: 2px;
   transition: width 0.4s ease;
 }
+
+.no-trades {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.no-trades p {
+  margin: 6px 0 0;
+  line-height: 1.55;
+}
