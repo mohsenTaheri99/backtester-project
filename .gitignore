@@ -7,3 +7,7 @@ dist/
 *.tsbuildinfo
 desktop/build/
 desktop/release/
+
+# Local API keys and scratch files - never commit these.
+twelvedata-test-api-key.txt
+*api-key*.txt

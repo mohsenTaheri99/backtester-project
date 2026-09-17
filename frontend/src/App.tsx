@@ -3,12 +3,31 @@ import BacktestPanel from './components/BacktestPanel'
 import Chart from './components/Chart'
 import DrawingToolbar from './components/DrawingToolbar'
 import Legend from './components/Legend'
+import SettingsModal from './components/SettingsModal'
 import Toolbar from './components/Toolbar'
-import { fetchCandles, fetchStrategies, fetchSymbols, runBacktest } from './api'
+import {
+  fetchCandles,
+  fetchForward,
+  fetchLiveStatus,
+  fetchStrategies,
+  fetchSymbols,
+  runBacktest,
+  startForward,
+  stopForward,
+} from './api'
 import type { ToolId } from './lib/drawings/types'
 import { useDrawings } from './lib/drawings/useDrawings'
 import { TIMEFRAME_SECONDS, tradeMarkers } from './lib/markers'
-import type { BacktestResult, Candle, ParamValue, StrategyInfo, SymbolInfo, Trade } from './types'
+import type {
+  BacktestResult,
+  Candle,
+  ForwardState,
+  LiveStatus,
+  ParamValue,
+  StrategyInfo,
+  SymbolInfo,
+  Trade,
+} from './types'
 
 const PAGE_SIZE = 1500
 const FALLBACK_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']
@@ -43,6 +62,13 @@ export default function App() {
   const [backtestError, setBacktestError] = useState<string | null>(null)
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null)
   const [focusTime, setFocusTime] = useState<number | null>(null)
+
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [live, setLive] = useState<LiveStatus | null>(null)
+  const [forward, setForward] = useState<ForwardState | null>(null)
+  const [forwardStarting, setForwardStarting] = useState(false)
+  // Bumped by the live poller so the chart reloads only when candles changed.
+  const [liveTick, setLiveTick] = useState(0)
 
   const [drawingTool, setDrawingTool] = useState<ToolId>('cursor')
   const [magnet, setMagnet] = useState(false)
@@ -93,6 +119,44 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /** Ask the backend where live data and the forward test stand. */
+  const syncLive = useCallback(
+    (chartSymbol: string) =>
+      Promise.all([fetchLiveStatus(chartSymbol), fetchForward()])
+        .then(([liveStatus, forwardState]) => {
+          setLive(liveStatus)
+          setForward(forwardState)
+          return liveStatus
+        })
+        .catch(() => null),
+    [],
+  )
+
+  // One timer drives both the live badge and the forward panel. It follows the
+  // backend's own poll interval, and a changed bar count triggers a chart reload.
+  useEffect(() => {
+    let cancelled = false
+    let timer = 0
+    let lastBar: number | null = null
+
+    const tick = async () => {
+      const status = await syncLive(symbol)
+      if (cancelled) return
+      if (status && status.symbol === symbol && status.lastBarTime !== lastBar) {
+        if (lastBar !== null) setLiveTick((n) => n + 1)
+        lastBar = status.lastBarTime
+      }
+      const seconds = status?.enabled ? Math.max(5, status.intervalSeconds) : 20
+      timer = window.setTimeout(tick, seconds * 1000)
+    }
+
+    tick()
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [symbol, syncLive])
+
   // Load the most recent page whenever the series changes.
   useEffect(() => {
     let cancelled = false
@@ -119,7 +183,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [symbol, timeframe])
+  }, [symbol, timeframe, liveTick])
 
   const loadOlder = useCallback(() => {
     if (loadingMoreRef.current || !hasMore || candles.length === 0) return
@@ -156,6 +220,22 @@ export default function App() {
       .catch((err: Error) => setBacktestError(err.message))
       .finally(() => setRunning(false))
   }, [params, strategy, symbol])
+
+  const handleStartForward = useCallback(() => {
+    if (!strategy) return
+    setForwardStarting(true)
+    setBacktestError(null)
+    startForward(strategy.id, symbol, params)
+      .then(setForward)
+      .catch((err: Error) => setBacktestError(err.message))
+      .finally(() => setForwardStarting(false))
+  }, [params, strategy, symbol])
+
+  const handleStopForward = useCallback(() => {
+    stopForward()
+      .then(setForward)
+      .catch((err: Error) => setBacktestError(err.message))
+  }, [])
 
   /** Bring the trade's entry bar into the buffer, then focus it. */
   const handleSelectTrade = useCallback(
@@ -209,10 +289,12 @@ export default function App() {
         showTrades={showTrades}
         hasTrades={Boolean(result?.trades.length)}
         loading={loading}
+        live={live}
         onSymbolChange={setSymbol}
         onTimeframeChange={setTimeframe}
         onToggleVolume={() => setShowVolume((v) => !v)}
         onToggleTrades={() => setShowTrades((v) => !v)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <div className="workspace">
@@ -280,6 +362,13 @@ export default function App() {
           running={running}
           error={backtestError}
           selectedTradeId={selectedTrade?.id ?? null}
+          symbol={symbol}
+          symbols={symbols}
+          forward={forward}
+          forwardStarting={forwardStarting}
+          onStartForward={handleStartForward}
+          onStopForward={handleStopForward}
+          onOpenSettings={() => setSettingsOpen(true)}
           onParamChange={(name, value) => setParams((current) => ({ ...current, [name]: value }))}
           onReset={() =>
             setParams(Object.fromEntries((strategy?.params ?? []).map((p) => [p.name, p.default])))
@@ -288,6 +377,18 @@ export default function App() {
           onSelectTrade={handleSelectTrade}
         />
       </div>
+
+      <SettingsModal
+        open={settingsOpen}
+        symbols={symbols}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={() => syncLive(symbol)}
+        onSymbolsChanged={(list) => {
+          setSymbols(list)
+          if (!list.some((s) => s.id === symbol) && list.length) setSymbol(list[0].id)
+          setLiveTick((n) => n + 1)
+        }}
+      />
 
       <footer className="status">
         <span>{candles.length.toLocaleString()} bars loaded</span>

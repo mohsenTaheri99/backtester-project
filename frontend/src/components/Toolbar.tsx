@@ -1,4 +1,5 @@
-import type { SymbolInfo } from '../types'
+import { since } from '../lib/format'
+import type { LiveStatus, SymbolInfo } from '../types'
 
 interface Props {
   symbols: SymbolInfo[]
@@ -9,10 +10,12 @@ interface Props {
   showTrades: boolean
   hasTrades: boolean
   loading: boolean
+  live: LiveStatus | null
   onSymbolChange: (id: string) => void
   onTimeframeChange: (tf: string) => void
   onToggleVolume: () => void
   onToggleTrades: () => void
+  onOpenSettings: () => void
 }
 
 export default function Toolbar({
@@ -24,12 +27,20 @@ export default function Toolbar({
   showTrades,
   hasTrades,
   loading,
+  live,
   onSymbolChange,
   onTimeframeChange,
   onToggleVolume,
   onToggleTrades,
+  onOpenSettings,
 }: Props) {
   const active = symbols.find((s) => s.id === symbol)
+  const streaming = Boolean(live?.enabled && live.symbol === symbol)
+  const liveTitle = !live?.enabled
+    ? 'Live prices are off - turn them on in Settings'
+    : live.lastError
+      ? live.lastError
+      : `Last poll ${since(live.lastPollAt)}, every ${live.intervalSeconds}s`
 
   return (
     <header className="toolbar">
@@ -86,6 +97,23 @@ export default function Toolbar({
         </span>
       )}
       {loading && <span className="meta loading">loading...</span>}
+
+      {streaming && (
+        <span className={live?.lastError ? 'live-badge error' : 'live-badge'} title={liveTitle}>
+          <span className={live?.lastError ? 'pulse' : 'pulse on'} />
+          {live?.lastError ? 'live error' : 'live'}
+        </span>
+      )}
+
+      <button
+        type="button"
+        className="icon-button"
+        onClick={onOpenSettings}
+        title="Settings"
+        aria-label="Settings"
+      >
+        &#9881;
+      </button>
     </header>
   )
 }

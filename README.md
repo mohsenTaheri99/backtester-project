@@ -52,6 +52,34 @@ cd frontend && npm run build
 cd ../backend && .venv/Scripts/python desktop_app.py
 ```
 
+## Settings, live data and forward testing
+
+The gear in the toolbar opens **Settings**, stored as JSON in
+`%LOCALAPPDATA%\GoldBacktester\settings.json` - outside the installation, so
+upgrades and uninstalls leave it alone.
+
+- **Data provider** - paste a [Twelve Data](https://twelvedata.com) API key and
+  press *Test connection* to see the plan and today's credit use.
+- **Market data** - search for a symbol (`XAU/USD`, `EUR/USD`, `AAPL`), import
+  its 1-minute history, then update or remove it later. Imported candles live in
+  `%LOCALAPPDATA%\GoldBacktester\data`.
+- **Live data** - polls the provider for new 1-minute candles and appends them
+  to the chart. A free plan allows 8 requests a minute and 800 a day, so the
+  default 60s interval costs 60 credits an hour.
+- **Forward test** - paper-trades the strategy on candles that arrive *after*
+  you press Start, on the **forward** tab of the strategy panel.
+
+Adding a setting is one `SettingDef` entry in `backend/app/settings.py`;
+validation, storage and the control in the modal all follow from it.
+
+The forward test runs the same engine as the backtest rather than a second copy
+of the rules: on every new candle the strategy is replayed over the full
+history, with `start_trading_at` pinned to the moment the session began. Earlier
+bars still build the 1h bias and 15m sweeps, but no trade can open on a bar that
+had already printed - so the result is what the rules would really have done
+from that moment on, and the session survives a restart because nothing but its
+start time, parameters and candles is state.
+
 ## Features
 
 - Candlesticks and volume on `1m 5m 15m 30m 1h 4h 1d 1w`, resampled from 1m

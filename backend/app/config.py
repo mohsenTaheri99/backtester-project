@@ -9,6 +9,14 @@ import pandas as pd
 
 DATA_DIR = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
 
+# Everything the user creates - settings, downloaded candles - lives outside the
+# installation, so an upgrade never overwrites it and no admin rights are needed.
+USER_DIR = Path(
+    os.getenv("USER_DIR")
+    or Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "GoldBacktester"
+)
+USER_DATA_DIR = USER_DIR / "data"
+
 # Base resolution of every CSV on disk. Everything else is resampled from it.
 BASE_TIMEFRAME = "1m"
 
@@ -42,9 +50,27 @@ class Symbol:
     id: str            # id used by the API / frontend
     name: str          # human readable
     exchange: str
-    source: str        # Yahoo ticker used by app.fetch_data
-    csv: str           # file inside DATA_DIR
+    source: str        # ticker at the provider (Yahoo for the bundled sample)
+    csv: str           # file name inside DATA_DIR, or USER_DATA_DIR when imported
     price_precision: int = 2
+    provider: str = ""  # "twelvedata" for imported symbols; "" cannot go live
+    imported: bool = False  # user-added: candles live in USER_DATA_DIR and are ours to write
+
+    @property
+    def path(self) -> Path:
+        return (USER_DATA_DIR if self.imported else DATA_DIR) / self.csv
+
+    def as_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "exchange": self.exchange,
+            "source": self.source,
+            "csv": self.csv,
+            "price_precision": self.price_precision,
+            "provider": self.provider,
+            "imported": self.imported,
+        }
 
 
 SYMBOLS: dict[str, Symbol] = {

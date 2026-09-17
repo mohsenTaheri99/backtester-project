@@ -1,4 +1,15 @@
-import type { BacktestResult, CandleResponse, ParamValue, StrategyInfo, SymbolInfo } from './types'
+import type {
+  BacktestResult,
+  CandleResponse,
+  ForwardState,
+  LiveStatus,
+  ParamValue,
+  ProviderSymbol,
+  ProviderUsage,
+  SettingsSchema,
+  StrategyInfo,
+  SymbolInfo,
+} from './types'
 
 // Same-origin: the desktop app's backend serves both the UI and /api (Vite proxies it in dev).
 const BASE = '/api'
@@ -13,7 +24,7 @@ async function get<T>(path: string, params: Record<string, string | number | und
   const response = await fetch(url)
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
-    throw new Error(`${response.status} ${response.statusText}${detail ? ` - ${detail}` : ''}`)
+    throw new Error(detail ? describe(detail) : `${response.status} ${response.statusText}`)
   }
   return response.json() as Promise<T>
 }
@@ -28,6 +39,63 @@ export const fetchCandles = (
 
 export const fetchStrategies = () => get<StrategyInfo[]>('/strategies')
 
+async function send<T>(path: string, method: 'POST' | 'PUT' | 'DELETE', body?: unknown): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(detail ? describe(detail) : `${response.status} ${response.statusText}`)
+  }
+  return response.json() as Promise<T>
+}
+
+/** FastAPI wraps errors as {"detail": "..."}; show the message, not the envelope. */
+function describe(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { detail?: string }
+    return parsed.detail ?? body
+  } catch {
+    return body
+  }
+}
+
+// --- settings ---------------------------------------------------------------
+export const fetchSettings = () => get<SettingsSchema>('/settings')
+
+export const saveSettings = (values: Record<string, ParamValue>) =>
+  send<SettingsSchema>('/settings', 'PUT', { values })
+
+// --- data provider ----------------------------------------------------------
+export const fetchProviderUsage = () => get<ProviderUsage>('/provider/usage')
+
+export const searchProvider = (q: string) => get<ProviderSymbol[]>('/provider/search', { q })
+
+export const importSymbol = (symbol: string, name: string, exchange: string) =>
+  send<SymbolInfo>('/symbols', 'POST', { symbol, name, exchange })
+
+export const refreshSymbol = (id: string) =>
+  send<SymbolInfo & { added: number }>(`/symbols/${encodeURIComponent(id)}/refresh`, 'POST')
+
+export const deleteSymbol = (id: string) =>
+  send<{ removed: string }>(`/symbols/${encodeURIComponent(id)}`, 'DELETE')
+
+// --- live data --------------------------------------------------------------
+export const fetchLiveStatus = (symbol?: string) => get<LiveStatus>('/live', { symbol })
+
+export const pollLive = (symbol?: string) =>
+  send<LiveStatus & { added: number }>(`/live/poll${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`, 'POST')
+
+// --- forward testing --------------------------------------------------------
+export const fetchForward = () => get<ForwardState>('/forward')
+
+export const startForward = (strategyId: string, symbol: string, params: Record<string, ParamValue>) =>
+  send<ForwardState>('/forward/start', 'POST', { strategyId, symbol, params })
+
+export const stopForward = () => send<ForwardState>('/forward/stop', 'POST')
+
 export async function runBacktest(
   strategyId: string,
   symbol: string,
@@ -40,7 +108,7 @@ export async function runBacktest(
   })
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
-    throw new Error(`${response.status} ${response.statusText}${detail ? ` - ${detail}` : ''}`)
+    throw new Error(detail ? describe(detail) : `${response.status} ${response.statusText}`)
   }
   return response.json() as Promise<BacktestResult>
 }

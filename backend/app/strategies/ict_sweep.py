@@ -62,6 +62,7 @@ class IctParams:
     breakeven_at_r: float = 1.0
     pip_size: float = 0.1         # gold: 1 pip = $0.10
     # --- account ---
+    start_trading_at: float = 0.0  # unix seconds; 0 = trade the whole dataset
     cash: float = 10_000.0
     leverage: float = 100.0
     spread_usd: float = 0.30
@@ -314,6 +315,9 @@ class IctSweepStrategy(Strategy):
         self._pin_bear = ctx["pin_bear"].to_numpy()
         self._atr = ctx["atr"].to_numpy()
 
+        self._trade_from = (
+            pd.Timestamp(p.start_trading_at, unit="s", tz="UTC") if p.start_trading_at else None
+        )
         self._max_sl = p.max_sl_pips * p.pip_size
         self._min_sl = p.min_sl_pips * p.pip_size
         self._warmup = max(p.atr_period, 2)
@@ -325,6 +329,10 @@ class IctSweepStrategy(Strategy):
     def next(self) -> None:
         i = len(self.data) - 1
         if i < self._warmup:
+            return
+        # Forward testing replays the full history for context but must not open
+        # a trade on a bar that had already printed when the session started.
+        if self._trade_from is not None and self.data.index[-1] < self._trade_from:
             return
 
         p = self.params
@@ -448,6 +456,7 @@ PARAM_UI: list[dict] = [
     },
     {"name": "allow_engulfing", "label": "Engulfing trigger", "group": "Filters"},
     {"name": "cash", "label": "Starting cash", "group": "Account", "unit": "$", "min": 1000, "max": 1_000_000, "step": 1000},
+    {"name": "pip_size", "label": "Pip size", "group": "Account", "unit": "$", "min": 0.00001, "max": 1, "step": 0.00001},
     {"name": "spread_usd", "label": "Spread", "group": "Account", "unit": "$", "min": 0, "max": 2, "step": 0.05},
 ]
 

@@ -21,6 +21,9 @@ export interface SymbolInfo {
   name: string
   exchange: string
   source: string
+  provider: string
+  imported: boolean
+  live: boolean // has a data provider, so it can stream and be forward tested
   pricePrecision: number
   bars: number
   from: number | null
@@ -128,4 +131,86 @@ export interface BacktestResult {
   rejections: Record<string, number>
   elapsedMs: number
   cached: boolean
+}
+
+// ---------------------------------------------------------------------------
+// settings, live data and forward testing
+// ---------------------------------------------------------------------------
+export type SettingType = 'text' | 'password' | 'number' | 'bool' | 'select'
+
+/** One row in the settings modal, described by the backend's SETTINGS list. */
+export interface SettingDef {
+  key: string
+  label: string
+  type: SettingType
+  help: string
+  placeholder: string
+  default: ParamValue
+  value: ParamValue
+  options?: string[]
+  min?: number
+  max?: number
+  step?: number
+  isSet?: boolean // password only: whether one is stored
+  hint?: string // password only: last 4 characters
+}
+
+export interface SettingsGroup {
+  name: string
+  settings: SettingDef[]
+}
+
+export interface SettingsSchema {
+  file: string
+  groups: SettingsGroup[]
+}
+
+export interface ProviderUsage {
+  ok: boolean
+  plan?: string
+  used?: number
+  limit?: number
+  message?: string
+  code?: number
+}
+
+export interface ProviderSymbol {
+  symbol: string
+  name: string
+  exchange: string
+  type: string
+}
+
+export interface LiveStatus {
+  enabled: boolean
+  symbol: string | null
+  intervalSeconds: number
+  lastPollAt: number | null
+  nextPollAt: number | null
+  lastError: string | null
+  lastAdded: number
+  polls: number
+  lastBarTime: number | null
+}
+
+export interface ForwardSession {
+  strategyId: string
+  symbol: string
+  params: Record<string, ParamValue>
+  startedAt: number
+  startedRealAt: number
+}
+
+export interface ForwardResult extends BacktestResult {
+  openTrade: (Trade & { open: true }) | null
+  startedAt: number
+  lastBarTime: number | null
+}
+
+export interface ForwardState {
+  running: boolean
+  session: ForwardSession | null
+  live: LiveStatus
+  result: ForwardResult | null
+  error: string | null
 }

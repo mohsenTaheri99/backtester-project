@@ -1,7 +1,18 @@
 import { useMemo, useState } from 'react'
 import EquityChart from './EquityChart'
+import ForwardSection from './ForwardSection'
+import Stat from './Stat'
+import { clock, num } from '../lib/format'
 import { colors } from '../lib/theme'
-import type { BacktestResult, ParamControl, ParamValue, StrategyInfo, Trade } from '../types'
+import type {
+  BacktestResult,
+  ForwardState,
+  ParamControl,
+  ParamValue,
+  StrategyInfo,
+  SymbolInfo,
+  Trade,
+} from '../types'
 
 interface Props {
   strategy: StrategyInfo | null
@@ -10,10 +21,17 @@ interface Props {
   running: boolean
   error: string | null
   selectedTradeId: number | null
+  symbol: string
+  symbols: SymbolInfo[]
+  forward: ForwardState | null
+  forwardStarting: boolean
   onParamChange: (name: string, value: ParamValue) => void
   onReset: () => void
   onRun: () => void
   onSelectTrade: (trade: Trade) => void
+  onStartForward: () => void
+  onStopForward: () => void
+  onOpenSettings: () => void
 }
 
 const REJECTION_LABELS: Record<string, string> = {
@@ -40,30 +58,6 @@ const EXIT_LABELS: Record<string, string> = {
   break_even: 'BE',
   closed_win: 'end +',
   closed_loss: 'end -',
-}
-
-const num = (value: number | null | undefined, digits = 2, suffix = '') =>
-  value === null || value === undefined ? '—' : `${value.toFixed(digits)}${suffix}`
-
-const clock = (unix: number) =>
-  new Date(unix * 1000).toLocaleString('en-GB', {
-    timeZone: 'UTC',
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
-  return (
-    <div className="stat">
-      <span className="stat-label">{label}</span>
-      <span className="stat-value" style={tone ? { color: tone === 'up' ? colors.up : colors.down } : undefined}>
-        {value}
-      </span>
-    </div>
-  )
 }
 
 function Control({
@@ -125,12 +119,19 @@ export default function BacktestPanel({
   running,
   error,
   selectedTradeId,
+  symbol,
+  symbols,
+  forward,
+  forwardStarting,
   onParamChange,
   onReset,
   onRun,
   onSelectTrade,
+  onStartForward,
+  onStopForward,
+  onOpenSettings,
 }: Props) {
-  const [tab, setTab] = useState<'setup' | 'results' | 'trades'>('setup')
+  const [tab, setTab] = useState<'setup' | 'results' | 'trades' | 'forward'>('setup')
 
   const groups = useMemo(() => {
     const byGroup = new Map<string, ParamControl[]>()
@@ -166,7 +167,7 @@ export default function BacktestPanel({
       </div>
 
       <nav className="tabs">
-        {(['setup', 'results', 'trades'] as const).map((name) => (
+        {(['setup', 'results', 'trades', 'forward'] as const).map((name) => (
           <button
             key={name}
             type="button"
@@ -175,6 +176,7 @@ export default function BacktestPanel({
           >
             {name}
             {name === 'trades' && result ? ` (${result.trades.length})` : ''}
+            {name === 'forward' && forward?.running ? <span className="pulse on" /> : ''}
           </button>
         ))}
       </nav>
@@ -261,6 +263,20 @@ export default function BacktestPanel({
             </>
           )}
         </div>
+      )}
+
+      {tab === 'forward' && (
+        <ForwardSection
+          state={forward}
+          symbol={symbol}
+          symbols={symbols}
+          starting={forwardStarting}
+          onStart={onStartForward}
+          onStop={onStopForward}
+          onOpenSettings={onOpenSettings}
+          onSelectTrade={onSelectTrade}
+          selectedTradeId={selectedTradeId}
+        />
       )}
 
       {tab === 'trades' && (
