@@ -46,6 +46,9 @@ class LiveFeed:
         }
         # Set by the UI: whichever symbol the chart is showing.
         self._chart_symbol: str | None = None
+        # Set by a running forward test, which must keep receiving candles even
+        # while the user looks at a different symbol on the chart.
+        self._pinned: str | None = None
 
     # -- wiring -------------------------------------------------------------
     def subscribe(self, listener: Listener) -> None:
@@ -68,15 +71,24 @@ class LiveFeed:
             self._chart_symbol = symbol_id
             self._wake.set()  # re-evaluate immediately instead of after a full interval
 
+    def pin(self, symbol_id: str | None) -> None:
+        """Poll this symbol regardless of what the chart is showing."""
+        self._pinned = symbol_id
+        self._wake.set()
+
     def nudge(self) -> None:
         """Poll now rather than waiting out the current interval."""
         self._wake.set()
 
     # -- what gets polled ---------------------------------------------------
     def target(self) -> str | None:
-        """The symbol to poll: the setting if it names a live-capable symbol, else the chart's."""
+        """The symbol to poll, most deliberate choice first.
+
+        A forward test outranks the chart: the user scrolling to another symbol
+        must not quietly starve a running session of the candles it needs.
+        """
         chosen = str(settings.get("live_symbol") or "").strip()
-        for candidate in (chosen, self._chart_symbol):
+        for candidate in (chosen, self._pinned, self._chart_symbol):
             symbol = store.symbol(candidate) if candidate else None
             if symbol is not None and symbol.provider:
                 return symbol.id
@@ -94,6 +106,7 @@ class LiveFeed:
         current["symbol"] = target
         current["intervalSeconds"] = int(settings.get("live_interval_seconds") or 60)
         current["lastBarTime"] = store.last_bar_time(target) if target else None
+        current["pinned"] = self._pinned
         if not target and self.enabled:
             current["lastError"] = (
                 "No live-capable symbol. Import one from Twelve Data in Settings → Market data."
@@ -140,7 +153,10 @@ class LiveFeed:
             return 0
 
         try:
-            client = TwelveData(str(settings.get("twelvedata_api_key") or ""))
+            client = TwelveData(
+                str(settings.get("twelvedata_api_key") or ""),
+                int(settings.get("provider_credits_per_minute") or 8),
+            )
             frame = client.latest(symbol.source, "1min", POLL_BARS)
             added = store.merge_bars(symbol_id, frame)
         except TwelveDataError as exc:

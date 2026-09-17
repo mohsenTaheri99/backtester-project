@@ -124,7 +124,13 @@ export interface BacktestResult {
   strategy: { id: string; name: string; timeframes: Record<string, string> }
   symbol: string
   params: Record<string, ParamValue>
-  range: { from: number; to: number; bars: number }
+  range: {
+    from: number
+    to: number
+    bars: number
+    tradedFrom: number // first bar allowed to trade; earlier bars are warm-up
+    warmupBars: number
+  }
   summary: BacktestSummary
   trades: Trade[]
   equity: EquityPoint[]
@@ -165,6 +171,15 @@ export interface SettingsSchema {
   groups: SettingsGroup[]
 }
 
+/** What a backtest range would cost before any credit is spent on it. */
+export interface RangePlan {
+  symbol: string
+  cached: { from: number; to: number } | null
+  canDownload: boolean
+  missing: { from: number; to: number; credits: number }[]
+  credits: number
+}
+
 export interface ProviderUsage {
   ok: boolean
   plan?: string
@@ -184,6 +199,7 @@ export interface ProviderSymbol {
 export interface LiveStatus {
   enabled: boolean
   symbol: string | null
+  pinned: string | null // symbol a running forward test holds the feed on
   intervalSeconds: number
   lastPollAt: number | null
   nextPollAt: number | null

@@ -36,6 +36,11 @@ export default function Toolbar({
 }: Props) {
   const active = symbols.find((s) => s.id === symbol)
   const streaming = Boolean(live?.enabled && live.symbol === symbol)
+  // A forward test can hold the feed on another symbol; say which, so a quiet
+  // chart does not read as a broken feed.
+  const elsewhere = Boolean(live?.enabled && live.symbol && live.symbol !== symbol)
+  // Live is possible here but switched off: say so, rather than showing nothing.
+  const dormant = Boolean(active?.live && !live?.enabled)
   const liveTitle = !live?.enabled
     ? 'Live prices are off - turn them on in Settings'
     : live.lastError
@@ -97,6 +102,25 @@ export default function Toolbar({
         </span>
       )}
       {loading && <span className="meta loading">loading...</span>}
+
+      {elsewhere && (
+        <span className="live-badge other" title={`Live feed is on ${live?.symbol} for the forward test`}>
+          <span className="pulse on" />
+          live: {live?.symbol}
+        </span>
+      )}
+
+      {dormant && (
+        <button
+          type="button"
+          className="live-badge off"
+          onClick={onOpenSettings}
+          title="Live prices are off - click to turn them on"
+        >
+          <span className="pulse" />
+          live off
+        </button>
+      )}
 
       {streaming && (
         <span className={live?.lastError ? 'live-badge error' : 'live-badge'} title={liveTitle}>

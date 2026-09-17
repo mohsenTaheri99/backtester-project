@@ -1123,3 +1123,37 @@ body {
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+
+.live-badge.off {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.live-badge.off:hover {
+  color: var(--text);
+}
+
+.range-presets {
+  width: fit-content;
+  margin-bottom: 8px;
+}
+
+.control input[type='datetime-local'] {
+  width: 178px;
+  background: #1b212c;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 11.5px;
+  color-scheme: dark;
+}
+
+.live-badge.other {
+  color: var(--dim);
+}

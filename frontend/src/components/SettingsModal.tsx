@@ -8,7 +8,7 @@ interface Props {
   symbols: SymbolInfo[]
   onClose: () => void
   onSaved: () => void
-  onSymbolsChanged: (symbols: SymbolInfo[]) => void
+  onSymbolsChanged: (symbols: SymbolInfo[], select?: string) => void
 }
 
 /**

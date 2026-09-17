@@ -3,6 +3,7 @@ import BacktestPanel from './components/BacktestPanel'
 import Chart from './components/Chart'
 import DrawingToolbar from './components/DrawingToolbar'
 import Legend from './components/Legend'
+import type { Range } from './components/RangeSelector'
 import SettingsModal from './components/SettingsModal'
 import Toolbar from './components/Toolbar'
 import {
@@ -61,6 +62,7 @@ export default function App() {
   const [running, setRunning] = useState(false)
   const [backtestError, setBacktestError] = useState<string | null>(null)
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null)
+  const [range, setRange] = useState<Range>({ from: null, to: null })
   const [focusTime, setFocusTime] = useState<number | null>(null)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -69,6 +71,8 @@ export default function App() {
   const [forwardStarting, setForwardStarting] = useState(false)
   // Bumped by the live poller so the chart reloads only when candles changed.
   const [liveTick, setLiveTick] = useState(0)
+  // Bumped after a download, when history changed and the chart must reload.
+  const [dataVersion, setDataVersion] = useState(0)
 
   const [drawingTool, setDrawingTool] = useState<ToolId>('cursor')
   const [magnet, setMagnet] = useState(false)
@@ -183,7 +187,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [symbol, timeframe])
+  }, [symbol, timeframe, dataVersion])
 
   // Live candles: fold the newest few bars into what is already drawn, rather
   // than refetching the page, so scrolled-back history and the view are kept.
@@ -242,14 +246,14 @@ export default function App() {
     setRunning(true)
     setBacktestError(null)
 
-    runBacktest(strategy.id, symbol, params)
+    runBacktest(strategy.id, symbol, params, range)
       .then((res) => {
         setResult(res)
         setSelectedTrade(null)
       })
       .catch((err: Error) => setBacktestError(err.message))
       .finally(() => setRunning(false))
-  }, [params, strategy, symbol])
+  }, [params, range, strategy, symbol])
 
   const handleStartForward = useCallback(() => {
     if (!strategy) return
@@ -394,6 +398,12 @@ export default function App() {
           selectedTradeId={selectedTrade?.id ?? null}
           symbol={symbol}
           symbols={symbols}
+          range={range}
+          onRangeChange={setRange}
+          onDataDownloaded={() => {
+            fetchSymbols().then(setSymbols).catch(() => undefined)
+            setDataVersion((n) => n + 1)
+          }}
           forward={forward}
           forwardStarting={forwardStarting}
           onStartForward={handleStartForward}
@@ -413,10 +423,11 @@ export default function App() {
         symbols={symbols}
         onClose={() => setSettingsOpen(false)}
         onSaved={() => syncLive(symbol)}
-        onSymbolsChanged={(list) => {
+        onSymbolsChanged={(list, select) => {
           setSymbols(list)
-          if (!list.some((s) => s.id === symbol) && list.length) setSymbol(list[0].id)
-          setLiveTick((n) => n + 1)
+          if (select && list.some((s) => s.id === select)) setSymbol(select)
+          else if (!list.some((s) => s.id === symbol) && list.length) setSymbol(list[0].id)
+          setDataVersion((n) => n + 1)
         }}
       />
 

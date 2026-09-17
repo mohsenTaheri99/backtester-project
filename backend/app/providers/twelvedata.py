@@ -12,11 +12,12 @@ spelling is more useful than anything we could invent.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -38,6 +39,36 @@ INTERVALS = {
 }
 
 
+class RateLimiter:
+    """Paces requests to a plan's credits-per-minute, shared by every client.
+
+    Downloading a month of 1-minute candles takes several pages, and a Basic
+    plan allows 8 a minute; without pacing the download dies part-way through
+    with a 429 and the credits are spent for nothing.
+    """
+
+    def __init__(self) -> None:
+        self._times: list[float] = []
+        self._lock = threading.Lock()
+
+    def take(self, per_minute: int) -> float:
+        """Block until a credit is free. Returns how long it waited."""
+        waited = 0.0
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                self._times = [t for t in self._times if now - t < 60.0]
+                if per_minute <= 0 or len(self._times) < per_minute:
+                    self._times.append(now)
+                    return waited
+                sleep_for = 60.0 - (now - self._times[0]) + 0.05
+            time.sleep(min(sleep_for, 60.0))
+            waited += sleep_for
+
+
+limiter = RateLimiter()
+
+
 class TwelveDataError(RuntimeError):
     """A refusal from the provider, with their own code and message."""
 
@@ -55,13 +86,30 @@ class TwelveDataError(RuntimeError):
 
 
 class TwelveData:
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, credits_per_minute: int = 8) -> None:
         self.api_key = (api_key or "").strip()
+        self.credits_per_minute = max(1, int(credits_per_minute))
+        self.requests = 0  # spent by this client, for reporting a download's cost
         if not self.api_key:
             raise TwelveDataError("No Twelve Data API key set - add one in Settings.", 401)
 
     # -- plumbing -----------------------------------------------------------
     def _request(self, path: str, **params: object) -> dict:
+        limiter.take(self.credits_per_minute)
+        self.requests += 1
+        try:
+            return self._send(path, **params)
+        except TwelveDataError as exc:
+            if not exc.is_rate_limit:
+                raise
+            # Our pacing and the server's accounting can disagree; give the
+            # window time to roll over and spend one more credit on a retry.
+            time.sleep(61)
+            limiter.take(self.credits_per_minute)
+            self.requests += 1
+            return self._send(path, **params)
+
+    def _send(self, path: str, **params: object) -> dict:
         query = {k: v for k, v in params.items() if v is not None}
         query["apikey"] = self.api_key
         url = f"{BASE_URL}/{path}?{urllib.parse.urlencode(query)}"
@@ -97,6 +145,7 @@ class TwelveData:
         interval: str = "1min",
         outputsize: int = MAX_OUTPUTSIZE,
         end_date: datetime | None = None,
+        start_date: datetime | None = None,
     ) -> pd.DataFrame:
         """One page of candles, oldest first, indexed by UTC bar-open time."""
         payload = self._request(
@@ -106,9 +155,45 @@ class TwelveData:
             outputsize=max(1, min(outputsize, MAX_OUTPUTSIZE)),
             order="ASC",
             timezone="UTC",
-            end_date=end_date.strftime("%Y-%m-%d %H:%M:%S") if end_date else None,
+            start_date=_stamp(start_date),
+            end_date=_stamp(end_date),
         )
         return _to_frame(payload.get("values") or [])
+
+    def range(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+        interval: str = "1min",
+        max_pages: int = 60,
+    ) -> pd.DataFrame:
+        """Every candle in [start, end], paged backwards from `end`.
+
+        Each page is one credit, so the caller decides whether a range is worth
+        downloading before calling this - see `pages_for`.
+        """
+        frames: list[pd.DataFrame] = []
+        cursor = end
+
+        for _ in range(max_pages):
+            if cursor <= start:
+                break
+            page = self.time_series(symbol, interval, MAX_OUTPUTSIZE, cursor, start)
+            if page.empty:
+                break
+            frames.append(page)
+            oldest = page.index[0].to_pydatetime().astimezone(timezone.utc)
+            # A short page means the provider has nothing older in this window.
+            if len(page) < MAX_OUTPUTSIZE or oldest <= start:
+                break
+            cursor = oldest - timedelta(seconds=1)
+
+        if not frames:
+            return _to_frame([])
+        out = pd.concat(frames).sort_index()
+        out = out[~out.index.duplicated(keep="last")]
+        return out[(out.index >= pd.Timestamp(start)) & (out.index <= pd.Timestamp(end))]
 
     def history(
         self,
@@ -160,6 +245,17 @@ class TwelveData:
             }
             for item in (payload.get("data") or [])[:limit]
         ]
+
+
+def pages_for(start: datetime, end: datetime, interval_minutes: int = 1) -> int:
+    """Credits a `range` download would cost, at worst: markets close, so a real
+    download usually needs fewer pages than a wall-clock estimate suggests."""
+    minutes = max(0.0, (end - start).total_seconds() / 60.0)
+    return max(1, int(-(-minutes // (MAX_OUTPUTSIZE * max(1, interval_minutes)))))
+
+
+def _stamp(moment: datetime | None) -> str | None:
+    return moment.strftime("%Y-%m-%d %H:%M:%S") if moment else None
 
 
 def _to_frame(values: list[dict]) -> pd.DataFrame:

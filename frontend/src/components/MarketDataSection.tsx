@@ -4,7 +4,8 @@ import type { ProviderSymbol, SymbolInfo } from '../types'
 
 interface Props {
   symbols: SymbolInfo[]
-  onSymbolsChanged: (symbols: SymbolInfo[]) => void
+  /** `select` names a symbol the chart should switch to, e.g. a fresh import. */
+  onSymbolsChanged: (symbols: SymbolInfo[], select?: string) => void
 }
 
 const when = (unix: number | null) =>
@@ -26,15 +27,20 @@ export default function MarketDataSection({ symbols, onSymbolsChanged }: Props) 
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
-  const reload = () => fetchSymbols().then(onSymbolsChanged)
+  const reload = (select?: string) => fetchSymbols().then((list) => onSymbolsChanged(list, select))
 
-  const run = (label: string, work: () => Promise<unknown>, done?: (result: never) => string) => {
+  const run = (
+    label: string,
+    work: () => Promise<unknown>,
+    done?: (result: never) => string,
+    select?: (result: never) => string,
+  ) => {
     setBusy(label)
     setError(null)
     setNote(null)
     work()
       .then(async (result) => {
-        await reload()
+        await reload(select ? select(result as never) : undefined)
         if (done) setNote(done(result as never))
       })
       .catch((err: Error) => setError(err.message))
@@ -56,7 +62,9 @@ export default function MarketDataSection({ symbols, onSymbolsChanged }: Props) 
     run(
       `import:${match.symbol}`,
       () => importSymbol(match.symbol, match.name, match.exchange),
-      (added: SymbolInfo) => `Imported ${added.id} — ${added.bars.toLocaleString()} 1m bars.`,
+      (added: SymbolInfo) =>
+        `Imported ${added.id} — ${added.bars.toLocaleString()} 1m bars. The chart is now showing it.`,
+      (added: SymbolInfo) => added.id, // jump the chart to what was just imported
     )
 
   return (

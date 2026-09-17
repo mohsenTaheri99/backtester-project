@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from dataclasses import fields
 from typing import Any
 
+import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -21,6 +22,7 @@ from .config import DEFAULT_LIMIT, MAX_LIMIT, TIMEFRAMES, Symbol
 from .forward import forward
 from .live import feed
 from .providers import TwelveData, TwelveDataError
+from .providers.twelvedata import pages_for
 from .settings import settings
 from .store import store
 from .strategies import REGISTRY
@@ -53,7 +55,10 @@ def _symbol_or_404(symbol_id: str) -> Symbol:
 
 def _provider() -> TwelveData:
     try:
-        return TwelveData(str(settings.get("twelvedata_api_key") or ""))
+        return TwelveData(
+            str(settings.get("twelvedata_api_key") or ""),
+            int(settings.get("provider_credits_per_minute") or 8),
+        )
     except TwelveDataError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -169,7 +174,10 @@ def provider_usage() -> dict:
     """Doubles as the modal's "Test connection", so a missing or rejected key is
     reported in the body rather than as an HTTP error the UI would render as red."""
     try:
-        client = TwelveData(str(settings.get("twelvedata_api_key") or ""))
+        client = TwelveData(
+            str(settings.get("twelvedata_api_key") or ""),
+            int(settings.get("provider_credits_per_minute") or 8),
+        )
         return {"ok": True, **client.usage()}
     except TwelveDataError as exc:
         return {"ok": False, "message": str(exc), "code": exc.code}
@@ -187,7 +195,7 @@ class ImportRequest(BaseModel):
     symbol: str = Field(..., description="provider ticker, e.g. XAU/USD")
     name: str = Field("", description="display name; defaults to the ticker")
     exchange: str = Field("", description="display exchange")
-    bars: int | None = Field(None, description="1m bars to download; defaults to the setting")
+    days: int | None = Field(None, description="days of history; defaults to the setting")
 
 
 def _slug(ticker: str) -> str:
@@ -210,10 +218,12 @@ def import_symbol(request: ImportRequest) -> dict:
     ticker = request.symbol.strip()
     if not ticker:
         raise HTTPException(400, "symbol is required")
-    bars = int(request.bars or settings.get("history_bars") or 5000)
+    days = int(request.days or settings.get("history_days") or 30)
+    end = pd.Timestamp.now(tz="UTC")
+    start = end - pd.Timedelta(days=days)
 
     try:
-        frame = _provider().history(ticker, bars, "1min")
+        frame = _provider().range(ticker, start.to_pydatetime(), end.to_pydatetime(), "1min")
     except TwelveDataError as exc:
         raise HTTPException(400, str(exc)) from exc
     if frame.empty:
@@ -239,16 +249,74 @@ def import_symbol(request: ImportRequest) -> dict:
 
 @app.post("/api/symbols/{symbol_id}/refresh")
 def refresh_symbol(symbol_id: str) -> dict:
+    """Top a symbol up to now, downloading only what is missing at the end."""
     symbol = _symbol_or_404(symbol_id)
     if not symbol.provider:
         raise HTTPException(400, f"'{symbol_id}' has no data provider to refresh from")
-    bars = int(settings.get("history_bars") or 5000)
+    last = store.last_bar_time(symbol_id)
+    end = pd.Timestamp.now(tz="UTC")
+    start = pd.Timestamp(last, unit="s", tz="UTC") if last else end - pd.Timedelta(
+        days=int(settings.get("history_days") or 30)
+    )
+    return _download(symbol_id, start, end)
+
+
+class RangeRequest(BaseModel):
+    start: int = Field(..., description="unix seconds, inclusive")
+    end: int = Field(..., description="unix seconds, inclusive")
+
+
+@app.get("/api/symbols/{symbol_id}/range")
+def range_plan(symbol_id: str, start: int = Query(...), end: int = Query(...)) -> dict:
+    """What a range would cost before spending anything on it."""
+    symbol = _symbol_or_404(symbol_id)
+    first, last = pd.Timestamp(start, unit="s", tz="UTC"), pd.Timestamp(end, unit="s", tz="UTC")
+    if last <= first:
+        raise HTTPException(400, "end must be after start")
+
+    gaps = store.missing_ranges(symbol_id, first, last) if symbol.provider else []
+    coverage = store.coverage(symbol_id)
+    return {
+        "symbol": symbol_id,
+        "cached": {"from": coverage[0], "to": coverage[1]} if coverage else None,
+        "canDownload": bool(symbol.provider),
+        "missing": [
+            {"from": int(a.timestamp()), "to": int(b.timestamp()), "credits": pages_for(a, b)}
+            for a, b in gaps
+        ],
+        "credits": sum(pages_for(a, b) for a, b in gaps),
+    }
+
+
+@app.post("/api/symbols/{symbol_id}/range")
+def download_range(symbol_id: str, request: RangeRequest) -> dict:
+    """Download only the parts of a range that are not cached yet."""
+    _symbol_or_404(symbol_id)
+    first, last = pd.Timestamp(request.start, unit="s", tz="UTC"), pd.Timestamp(request.end, unit="s", tz="UTC")
+    if last <= first:
+        raise HTTPException(400, "end must be after start")
+    return _download(symbol_id, first, last)
+
+
+def _download(symbol_id: str, start: pd.Timestamp, end: pd.Timestamp) -> dict:
+    symbol = _symbol_or_404(symbol_id)
+    if not symbol.provider:
+        raise HTTPException(400, f"'{symbol_id}' has no data provider to download from")
+
+    gaps = store.missing_ranges(symbol_id, start, end)
+    if not gaps:
+        return {**_symbol_payload(symbol), "added": 0, "credits": 0, "upToDate": True}
+
+    client = _provider()
+    added = 0
     try:
-        frame = _provider().history(symbol.source, bars, "1min")
-        added = store.merge_bars(symbol_id, frame)
+        for gap_start, gap_end in gaps:
+            frame = client.range(symbol.source, gap_start.to_pydatetime(), gap_end.to_pydatetime(), "1min")
+            added += store.merge_bars(symbol_id, frame)
     except TwelveDataError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return {**_symbol_payload(symbol), "added": added}
+        # Keep whatever arrived before the failure; the caller can retry the rest.
+        raise HTTPException(400, f"{exc} ({added} bars downloaded before it failed)") from exc
+    return {**_symbol_payload(symbol), "added": added, "credits": client.requests, "upToDate": False}
 
 
 @app.delete("/api/symbols/{symbol_id}")
@@ -321,6 +389,8 @@ class BacktestRequest(BaseModel):
     strategyId: str = Field("ict_sweep", description="id from /api/strategies")
     symbol: str = Field("XAUUSD", description="symbol id from /api/symbols")
     params: dict[str, Any] = Field(default_factory=dict, description="parameter overrides")
+    rangeFrom: int | None = Field(None, description="unix seconds; test from here")
+    rangeTo: int | None = Field(None, description="unix seconds; test up to here")
 
 
 def _describe(info) -> dict:
@@ -363,6 +433,8 @@ def backtest(request: BacktestRequest) -> dict:
         request.strategyId,
         request.symbol,
         store.version(request.symbol),
+        request.rangeFrom,
+        request.rangeTo,
         tuple(sorted((k, str(v)) for k, v in request.params.items())),
     )
     with _CACHE_LOCK:
@@ -371,7 +443,9 @@ def backtest(request: BacktestRequest) -> dict:
         return {**cached, "cached": True}
 
     try:
-        result = run_backtest(request.strategyId, request.symbol, request.params)
+        result = run_backtest(
+            request.strategyId, request.symbol, request.params, request.rangeFrom, request.rangeTo
+        )
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
     except (TypeError, ValueError) as exc:

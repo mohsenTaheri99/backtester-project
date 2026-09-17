@@ -85,16 +85,31 @@ SETTINGS: tuple[SettingDef, ...] = (
         help="Free key from twelvedata.com. Needed to add symbols and stream live prices.",
     ),
     SettingDef(
-        key="history_bars",
+        key="history_days",
         label="History to download",
         group="Data provider",
         type=NUMBER,
-        default=5000,
-        min=500,
-        max=50000,
-        step=500,
+        default=30,
+        min=1,
+        max=365,
+        step=1,
         integer=True,
-        help="1-minute bars fetched per symbol, newest first, in pages of 5000.",
+        help=(
+            "Days of 1-minute candles fetched when a symbol is imported. One credit "
+            "covers about 3.5 days, so 30 days costs roughly 9."
+        ),
+    ),
+    SettingDef(
+        key="provider_credits_per_minute",
+        label="Rate limit",
+        group="Data provider",
+        type=NUMBER,
+        default=8,
+        min=1,
+        max=3000,
+        step=1,
+        integer=True,
+        help="Requests a minute your plan allows. Downloads are paced to stay under it.",
     ),
     SettingDef(
         key="live_enabled",

@@ -62,12 +62,28 @@ upgrades and uninstalls leave it alone.
   press *Test connection* to see the plan and today's credit use.
 - **Market data** - search for a symbol (`XAU/USD`, `EUR/USD`, `AAPL`), import
   its 1-minute history, then update or remove it later. Imported candles live in
-  `%LOCALAPPDATA%\GoldBacktester\data`.
+  `%LOCALAPPDATA%\GoldBacktester\data`. Downloads are paced to the plan's
+  requests-a-minute so a long one cannot die half way with a 429.
 - **Live data** - polls the provider for new 1-minute candles and appends them
   to the chart. A free plan allows 8 requests a minute and 800 a day, so the
   default 60s interval costs 60 credits an hour.
 - **Forward test** - paper-trades the strategy on candles that arrive *after*
   you press Start, on the **forward** tab of the strategy panel.
+
+### Test range
+
+The **setup** tab takes a range - `7d / 30d / 90d / All`, or explicit UTC dates -
+and the backtest runs on that window only. Before you run it, the panel says what
+the range would cost: a range already cached spends nothing, and only the parts
+that are genuinely missing are downloaded. Gaps *inside* the cached span are
+weekends and market closures, not missing data, so they are never re-fetched.
+
+Warm-up is handled for you. The window keeps roughly a day of extra candles
+before its first tradable bar, so the 1h bias and 15m sweeps entering the window
+are as complete as any other bar's, and the results report the warm-up
+separately. Those bars are counted in bars rather than wall-clock, because a
+window opening after a weekend would otherwise take its warm-up from a closed
+market and get none at all.
 
 Adding a setting is one `SettingDef` entry in `backend/app/settings.py`;
 validation, storage and the control in the modal all follow from it.

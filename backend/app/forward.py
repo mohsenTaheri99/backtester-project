@@ -48,6 +48,7 @@ class ForwardTester:
             settings.set_state(STATE_KEY, None)
             return
         self._session = saved
+        feed.pin(saved["symbol"])
         print(f"[forward] resumed {saved['strategyId']} on {saved['symbol']}")
 
     def start(self, strategy_id: str, symbol_id: str, params: dict[str, Any] | None) -> dict:
@@ -78,7 +79,7 @@ class ForwardTester:
             self._error = None
         settings.set_state(STATE_KEY, self._session)
 
-        feed.follow(symbol_id)
+        feed.pin(symbol_id)  # keep its candles coming whatever the chart shows
         feed.nudge()
         return self.snapshot()
 
@@ -89,6 +90,7 @@ class ForwardTester:
             self._computed_version = None
             self._error = None
         settings.set_state(STATE_KEY, None)
+        feed.pin(None)
         return self.snapshot()
 
     # -- computation --------------------------------------------------------

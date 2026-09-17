@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import asdict, fields
+from dataclasses import asdict, fields, replace
 from typing import Any
 
 import pandas as pd
 from backtesting import Backtest
 
+from .config import TIMEFRAMES
 from .store import store
 from .strategies import REGISTRY, build_context
 
@@ -22,6 +23,25 @@ _OHLCV_RENAME = {
 }
 
 MAX_EQUITY_POINTS = 1500
+
+_RESAMPLE = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+
+
+def _resampler(m1: pd.DataFrame):
+    """Derive higher timeframes from this slice, not from the store's full frame.
+
+    Resampling the slice is what makes a ranged backtest independent: the store's
+    cached frames cover everything, and using them would feed the strategy bars
+    from outside the window.
+    """
+
+    def at(timeframe: str) -> pd.DataFrame:
+        if timeframe == "1m":
+            return m1
+        out = m1.resample(TIMEFRAMES[timeframe], label="left", closed="left", origin="epoch").agg(_RESAMPLE)
+        return out.dropna(subset=["open"]).astype({"volume": "int64"})
+
+    return at
 
 
 def _clean(value: Any) -> Any:
@@ -159,10 +179,27 @@ def _equity_payload(curve: pd.DataFrame) -> list[dict[str, Any]]:
     ]
 
 
+def _warmup_bars(params) -> int:
+    """1m bars of context to keep before the first bar that may be traded.
+
+    The 1h bias needs `h1_fractal` bars either side of a swing plus room for a
+    break of structure, and a 15m pool stays relevant for `sweep_lookback` bars.
+    Whichever reaches back further wins, doubled for headroom.
+
+    Counted in bars rather than wall-clock: a window that opens after a weekend
+    would otherwise take its warm-up from a closed market and get none at all.
+    """
+    bias = 60 * (2 * getattr(params, "h1_fractal", 5) + 1)
+    sweeps = 15 * getattr(params, "sweep_lookback", 40)
+    return max(bias, sweeps, 12 * 60) * 2
+
+
 def run_backtest(
     strategy_id: str,
     symbol: str,
     overrides: dict[str, Any] | None = None,
+    range_from: int | None = None,
+    range_to: int | None = None,
 ) -> dict[str, Any]:
     if strategy_id not in REGISTRY:
         raise KeyError(f"unknown strategy '{strategy_id}'")
@@ -170,10 +207,36 @@ def run_backtest(
     params = _params_from_request(info.params, overrides)
 
     started = time.perf_counter()
-    m1 = store.frame(symbol, info.timeframes["trigger"])
-    m15 = store.frame(symbol, info.timeframes["liquidity"])
-    h1 = store.frame(symbol, info.timeframes["bias"])
-    pin = store.frame(symbol, params.pin_timeframe)
+    full = store.frame(symbol, info.timeframes["trigger"])
+    if full.empty:
+        raise ValueError(f"'{symbol}' has no candles to test")
+
+    # A range keeps the warm-up bars in the data but bars them from trading, so
+    # the bias and sweeps entering the window are as complete as any other bar's.
+    trade_from = None
+    if range_from is not None or range_to is not None:
+        begin = pd.Timestamp(range_from, unit="s", tz="UTC") if range_from else full.index[0]
+        finish = pd.Timestamp(range_to, unit="s", tz="UTC") if range_to else full.index[-1]
+        if finish <= begin:
+            raise ValueError("the backtest range ends before it starts")
+        inside = full[(full.index >= begin) & (full.index <= finish)]
+        if inside.empty:
+            raise ValueError(
+                f"no candles between {begin:%Y-%m-%d %H:%M} and {finish:%Y-%m-%d %H:%M} UTC"
+            )
+        first = full.index.searchsorted(inside.index[0])
+        full = full.iloc[max(0, first - _warmup_bars(params)) : first + len(inside)]
+        if range_from is not None:
+            trade_from = float(begin.timestamp())
+
+    m1 = full
+    resample = _resampler(m1)
+    m15 = resample(info.timeframes["liquidity"])
+    h1 = resample(info.timeframes["bias"])
+    pin = resample(params.pin_timeframe)
+
+    if trade_from is not None:
+        params = replace(params, start_trading_at=max(params.start_trading_at, trade_from))
 
     context = build_context(m1, m15, h1, params, pin)
 
@@ -215,6 +278,10 @@ def run_backtest(
             "from": int(m1.index[0].timestamp()),
             "to": int(m1.index[-1].timestamp()),
             "bars": len(m1),
+            "tradedFrom": int(trade_from) if trade_from else int(m1.index[0].timestamp()),
+            "warmupBars": int((m1.index < pd.Timestamp(trade_from, unit="s", tz="UTC")).sum())
+            if trade_from
+            else 0,
         },
         "summary": _summary(stats, trades),
         "trades": _trades_payload(trades, params.pip_size),

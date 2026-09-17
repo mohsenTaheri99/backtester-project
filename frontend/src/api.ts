@@ -6,6 +6,7 @@ import type {
   ParamValue,
   ProviderSymbol,
   ProviderUsage,
+  RangePlan,
   SettingsSchema,
   StrategyInfo,
   SymbolInfo,
@@ -79,6 +80,16 @@ export const importSymbol = (symbol: string, name: string, exchange: string) =>
 export const refreshSymbol = (id: string) =>
   send<SymbolInfo & { added: number }>(`/symbols/${encodeURIComponent(id)}/refresh`, 'POST')
 
+export const fetchRangePlan = (id: string, start: number, end: number) =>
+  get<RangePlan>(`/symbols/${encodeURIComponent(id)}/range`, { start, end })
+
+export const downloadRange = (id: string, start: number, end: number) =>
+  send<SymbolInfo & { added: number; credits: number; upToDate: boolean }>(
+    `/symbols/${encodeURIComponent(id)}/range`,
+    'POST',
+    { start, end },
+  )
+
 export const deleteSymbol = (id: string) =>
   send<{ removed: string }>(`/symbols/${encodeURIComponent(id)}`, 'DELETE')
 
@@ -100,11 +111,18 @@ export async function runBacktest(
   strategyId: string,
   symbol: string,
   params: Record<string, ParamValue>,
+  range?: { from: number | null; to: number | null },
 ): Promise<BacktestResult> {
   const response = await fetch(`${BASE}/backtest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ strategyId, symbol, params }),
+    body: JSON.stringify({
+      strategyId,
+      symbol,
+      params,
+      rangeFrom: range?.from ?? null,
+      rangeTo: range?.to ?? null,
+    }),
   })
   if (!response.ok) {
     const detail = await response.text().catch(() => '')

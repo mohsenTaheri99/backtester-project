@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import EquityChart from './EquityChart'
 import ForwardSection from './ForwardSection'
+import RangeSelector, { type Range } from './RangeSelector'
 import Stat from './Stat'
 import { clock, num } from '../lib/format'
 import { colors } from '../lib/theme'
@@ -23,6 +24,9 @@ interface Props {
   selectedTradeId: number | null
   symbol: string
   symbols: SymbolInfo[]
+  range: Range
+  onRangeChange: (range: Range) => void
+  onDataDownloaded: () => void
   forward: ForwardState | null
   forwardStarting: boolean
   onParamChange: (name: string, value: ParamValue) => void
@@ -121,6 +125,9 @@ export default function BacktestPanel({
   selectedTradeId,
   symbol,
   symbols,
+  range,
+  onRangeChange,
+  onDataDownloaded,
   forward,
   forwardStarting,
   onParamChange,
@@ -186,6 +193,14 @@ export default function BacktestPanel({
       {tab === 'setup' && (
         <div className="panel-body">
           {strategy && <p className="dim small strategy-note">{strategy.description}</p>}
+
+          <RangeSelector
+            symbol={symbols.find((s) => s.id === symbol)}
+            range={range}
+            onChange={onRangeChange}
+            onDownloaded={onDataDownloaded}
+          />
+
           {groups.map(([group, controls]) => (
             <section key={group} className="param-group">
               <h3>{group}</h3>
@@ -257,8 +272,12 @@ export default function BacktestPanel({
                 Counted per 1m bar, in filter order — a bar rejected early is not counted again later.
               </p>
               <p className="dim small">
-                {result.range.bars.toLocaleString()} bars · {result.elapsedMs} ms
-                {result.cached ? ' · cached' : ''}
+                Tested {clock(result.range.tradedFrom)} → {clock(result.range.to)} UTC ·{' '}
+                {(result.range.bars - result.range.warmupBars).toLocaleString()} bars
+                {result.range.warmupBars > 0
+                  ? ` (+${result.range.warmupBars.toLocaleString()} warm-up)`
+                  : ''}{' '}
+                · {result.elapsedMs} ms{result.cached ? ' · cached' : ''}
               </p>
             </>
           )}

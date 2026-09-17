@@ -232,6 +232,27 @@ class CandleStore:
         df = self._base.get(symbol_id)
         return 0 if df is None else len(df)
 
+    def missing_ranges(
+        self, symbol_id: str, start: pd.Timestamp, end: pd.Timestamp
+    ) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+        """The parts of [start, end] this symbol has no candles for yet.
+
+        Only the ends are considered. Holes inside the cached span are weekends
+        and market closures, not missing data, and chasing them would spend a
+        credit every time to be told the market was shut.
+        """
+        df = self._base.get(symbol_id)
+        if df is None or df.empty:
+            return [(start, end)]
+
+        first, last = df.index[0], df.index[-1]
+        gaps: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+        if start < first:
+            gaps.append((start, min(end, first)))
+        if end > last:
+            gaps.append((max(start, last), end))
+        return [(a, b) for a, b in gaps if b > a]
+
     def last_bar_time(self, symbol_id: str) -> int | None:
         df = self._base.get(symbol_id)
         return None if df is None or df.empty else int(df.index[-1].timestamp())
