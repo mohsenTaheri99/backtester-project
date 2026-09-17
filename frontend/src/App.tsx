@@ -8,7 +8,7 @@ import { fetchCandles, fetchStrategies, fetchSymbols, runBacktest } from './api'
 import type { ToolId } from './lib/drawings/types'
 import { useDrawings } from './lib/drawings/useDrawings'
 import { TIMEFRAME_SECONDS, tradeMarkers } from './lib/markers'
-import type { BacktestResult, Candle, StrategyInfo, SymbolInfo, Trade } from './types'
+import type { BacktestResult, Candle, ParamValue, StrategyInfo, SymbolInfo, Trade } from './types'
 
 const PAGE_SIZE = 1500
 const FALLBACK_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']
@@ -37,7 +37,7 @@ export default function App() {
   const [hovered, setHovered] = useState<Candle | null>(null)
 
   const [strategy, setStrategy] = useState<StrategyInfo | null>(null)
-  const [params, setParams] = useState<Record<string, number | boolean>>({})
+  const [params, setParams] = useState<Record<string, ParamValue>>({})
   const [result, setResult] = useState<BacktestResult | null>(null)
   const [running, setRunning] = useState(false)
   const [backtestError, setBacktestError] = useState<string | null>(null)

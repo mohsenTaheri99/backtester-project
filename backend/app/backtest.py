@@ -173,8 +173,9 @@ def run_backtest(
     m1 = store.frame(symbol, info.timeframes["trigger"])
     m15 = store.frame(symbol, info.timeframes["liquidity"])
     h1 = store.frame(symbol, info.timeframes["bias"])
+    pin = store.frame(symbol, params.pin_timeframe)
 
-    context = build_context(m1, m15, h1, params)
+    context = build_context(m1, m15, h1, params, pin)
 
     data = m1.rename(columns=_OHLCV_RENAME)
     spread_rel = params.spread_usd / float(data["Close"].mean())
@@ -202,7 +203,12 @@ def run_backtest(
     strategy_instance = stats["_strategy"]
 
     return {
-        "strategy": {"id": info.id, "name": info.name, "timeframes": info.timeframes},
+        "strategy": {
+            "id": info.id,
+            "name": info.name,
+            # The pin timeframe is a parameter, so report what this run used.
+            "timeframes": {**info.timeframes, "pin": params.pin_timeframe},
+        },
         "symbol": symbol,
         "params": asdict(params),
         "range": {

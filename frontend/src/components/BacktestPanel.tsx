@@ -1,16 +1,16 @@
 import { useMemo, useState } from 'react'
 import EquityChart from './EquityChart'
 import { colors } from '../lib/theme'
-import type { BacktestResult, ParamControl, StrategyInfo, Trade } from '../types'
+import type { BacktestResult, ParamControl, ParamValue, StrategyInfo, Trade } from '../types'
 
 interface Props {
   strategy: StrategyInfo | null
-  params: Record<string, number | boolean>
+  params: Record<string, ParamValue>
   result: BacktestResult | null
   running: boolean
   error: string | null
   selectedTradeId: number | null
-  onParamChange: (name: string, value: number | boolean) => void
+  onParamChange: (name: string, value: ParamValue) => void
   onReset: () => void
   onRun: () => void
   onSelectTrade: (trade: Trade) => void
@@ -21,12 +21,18 @@ const REJECTION_LABELS: Record<string, string> = {
   outside_session: 'outside London / New York',
   not_in_discount: 'not in discount',
   not_in_premium: 'not in premium',
-  no_trigger: 'no 1m pin or engulfing',
+  no_trigger: 'no pin or engulfing trigger',
   no_range: '1h range not formed yet',
   stop_too_tight: 'stop below minimum',
   size_below_one_unit: 'size rounded to zero',
   no_sweep_extreme: 'sweep extreme missing',
 }
+
+/** The pin timeframe is a parameter, so that row of the funnel is built per run. */
+const rejectionLabel = (reason: string, pinTimeframe: string) =>
+  reason === 'no_trigger' && pinTimeframe
+    ? `no ${pinTimeframe} pin or 1m engulfing`
+    : REJECTION_LABELS[reason] ?? reason
 
 const EXIT_LABELS: Record<string, string> = {
   take_profit: 'TP',
@@ -66,9 +72,23 @@ function Control({
   onChange,
 }: {
   control: ParamControl
-  value: number | boolean
-  onChange: (value: number | boolean) => void
+  value: ParamValue
+  onChange: (value: ParamValue) => void
 }) {
+  if (control.type === 'select') {
+    return (
+      <label className="control">
+        <span className="control-label">{control.label}</span>
+        <select className="select" value={String(value)} onChange={(e) => onChange(e.target.value)}>
+          {(control.options ?? []).map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </label>
+    )
+  }
   if (control.type === 'bool') {
     return (
       <label className="control checkbox">
@@ -124,6 +144,9 @@ export default function BacktestPanel({
 
   const summary = result?.summary
   const profitable = (summary?.returnPct ?? 0) > 0
+  // What the panel currently describes: the picked pin timeframe, not the default.
+  const pinTimeframe = String(params.pin_timeframe ?? strategy?.timeframes.trigger ?? '1m')
+  const resultPinTimeframe = String(result?.strategy.timeframes.pin ?? '')
 
   return (
     <aside className="panel">
@@ -133,7 +156,7 @@ export default function BacktestPanel({
           {strategy && (
             <p className="dim small">
               {strategy.timeframes.bias} bias · {strategy.timeframes.liquidity} sweep ·{' '}
-              {strategy.timeframes.trigger} trigger
+              {pinTimeframe} pin · {strategy.timeframes.trigger} execution
             </p>
           )}
         </div>
@@ -223,7 +246,7 @@ export default function BacktestPanel({
                   .sort((a, b) => b[1] - a[1])
                   .map(([reason, count]) => (
                     <li key={reason}>
-                      <span>{REJECTION_LABELS[reason] ?? reason}</span>
+                      <span>{rejectionLabel(reason, resultPinTimeframe)}</span>
                       <b>{count.toLocaleString()}</b>
                     </li>
                   ))}

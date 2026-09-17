@@ -135,7 +135,11 @@ def _describe(info) -> dict:
 
     def kind(name: str) -> str:
         raw = str(types.get(name, "float"))
-        return "bool" if "bool" in raw else "int" if "int" in raw else "float"
+        if "bool" in raw:
+            return "bool"
+        if "str" in raw:
+            return "select"  # rendered as a dropdown over the entry's "options"
+        return "int" if "int" in raw else "float"
 
     return {
         "id": info.id,

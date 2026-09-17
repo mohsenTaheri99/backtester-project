@@ -1,4 +1,4 @@
-import type { BacktestResult, CandleResponse, StrategyInfo, SymbolInfo } from './types'
+import type { BacktestResult, CandleResponse, ParamValue, StrategyInfo, SymbolInfo } from './types'
 
 // Same-origin: the desktop app's backend serves both the UI and /api (Vite proxies it in dev).
 const BASE = '/api'
@@ -31,7 +31,7 @@ export const fetchStrategies = () => get<StrategyInfo[]>('/strategies')
 export async function runBacktest(
   strategyId: string,
   symbol: string,
-  params: Record<string, number | boolean>,
+  params: Record<string, ParamValue>,
 ): Promise<BacktestResult> {
   const response = await fetch(`${BASE}/backtest`, {
     method: 'POST',

@@ -9,6 +9,11 @@ Three timeframes, each with one job:
   1m   trigger    - pin bar or engulfing in the bias direction, entered on the
                     close of that candle.
 
+The pin bar may be read on any timeframe (`pin_timeframe`): the pattern is
+evaluated on that timeframe's closed candles and fires on the 1m bar where such
+a candle completes, so a 5m pin still enters at the 5m close. Engulfing always
+stays on the 1m execution grid.
+
 Filters: only buy in discount / sell in premium of the 1h range, and only
 during the first 2.5h of the London and New York sessions.
 
@@ -23,6 +28,7 @@ import numpy as np
 import pandas as pd
 from backtesting import Strategy
 
+from ..config import BASE_TIMEFRAME, TIMEFRAMES, timeframe_delta
 from .signals import atr, fractal_swings_by_close, fractal_swings_by_extreme, session_mask
 
 LONDON = ("Europe/London", "08:00")
@@ -37,6 +43,7 @@ class IctParams:
     sweep_lookback: int = 40      # how many 15m bars back a pool stays relevant
     sweep_window_min: int = 30    # minutes a sweep stays tradable
     # --- trigger ---
+    pin_timeframe: str = "1m"         # timeframe the pin bar is read on
     pin_wick_ratio: float = 2.0       # signal wick >= ratio * body
     pin_opposite_ratio: float = 0.3   # opposite wick <= ratio * signal wick
     allow_pin: bool = True
@@ -58,6 +65,13 @@ class IctParams:
     cash: float = 10_000.0
     leverage: float = 100.0
     spread_usd: float = 0.30
+
+    def __post_init__(self) -> None:
+        if self.pin_timeframe not in TIMEFRAMES:
+            raise ValueError(
+                f"pin_timeframe '{self.pin_timeframe}' is not a known timeframe "
+                f"(have: {', '.join(TIMEFRAMES)})"
+            )
 
     @property
     def session_windows(self) -> list[tuple[str, str, int]]:
@@ -180,12 +194,19 @@ def m15_sweeps(m15: pd.DataFrame, p: IctParams) -> pd.DataFrame:
     return pd.DataFrame(rows).set_index("available_at")
 
 
-def build_context(m1: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, p: IctParams) -> pd.DataFrame:
+def build_context(
+    m1: pd.DataFrame,
+    m15: pd.DataFrame,
+    h1: pd.DataFrame,
+    p: IctParams,
+    pin: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Project every higher-timeframe fact onto the 1m grid, without leaking.
 
     A 1m bar opening at T is matched with the newest context whose
     `available_at` is <= T, i.e. information that was already public before the
-    bar even started.
+    bar even started. `pin` holds the candles of `p.pin_timeframe`; it defaults
+    to the 1m frame, which is what "1m" resamples to anyway.
     """
     ctx = pd.DataFrame(index=m1.index)
 
@@ -207,6 +228,10 @@ def build_context(m1: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, p: IctP
         ctx["sweep_level"] = np.nan
         ctx["sweep_extreme"] = np.nan
 
+    triggers = pin_triggers(m1 if pin is None else pin, m1.index, p)
+    ctx["pin_bull"] = triggers["pin_bull"]
+    ctx["pin_bear"] = triggers["pin_bear"]
+
     ctx["in_session"] = (
         session_mask(m1.index, p.session_windows)
         if p.use_sessions
@@ -219,28 +244,52 @@ def build_context(m1: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, p: IctP
 # ---------------------------------------------------------------------------
 # 1m entry triggers
 # ---------------------------------------------------------------------------
-def trigger_at(
-    o: float, h: float, l: float, c: float, po: float, pc: float, direction: int, p: IctParams
-) -> str | None:
-    """Name of the candlestick trigger firing on this closed bar, if any."""
-    body = abs(c - o)
-    upper = h - max(o, c)
-    lower = min(o, c) - l
+def pin_flags(df: pd.DataFrame, p: IctParams) -> tuple[np.ndarray, np.ndarray]:
+    """(bullish, bearish) pin bar per candle of `df`, whatever its timeframe."""
+    o = df["open"].to_numpy()
+    h = df["high"].to_numpy()
+    l = df["low"].to_numpy()
+    c = df["close"].to_numpy()
 
-    if p.allow_pin and body > 0:
-        if direction == 1 and lower >= p.pin_wick_ratio * body and upper <= p.pin_opposite_ratio * lower:
-            return "pin"
-        if direction == -1 and upper >= p.pin_wick_ratio * body and lower <= p.pin_opposite_ratio * upper:
-            return "pin"
+    body = np.abs(c - o)
+    upper = h - np.maximum(o, c)
+    lower = np.minimum(o, c) - l
 
-    if p.allow_engulfing:
-        prev_low, prev_high = min(po, pc), max(po, pc)
-        if direction == 1 and c > o and pc < po and o <= prev_low and c >= prev_high:
-            return "engulfing"
-        if direction == -1 and c < o and pc > po and o >= prev_high and c <= prev_low:
-            return "engulfing"
+    has_body = body > 0
+    bullish = has_body & (lower >= p.pin_wick_ratio * body) & (upper <= p.pin_opposite_ratio * lower)
+    bearish = has_body & (upper >= p.pin_wick_ratio * body) & (lower <= p.pin_opposite_ratio * upper)
+    return bullish, bearish
 
-    return None
+
+def pin_triggers(pin: pd.DataFrame, m1_index: pd.DatetimeIndex, p: IctParams) -> pd.DataFrame:
+    """Pin bars of `pin_timeframe`, stamped on the 1m bar that closes with them.
+
+    A candle covering [T, T + tf) is only complete at T + tf, so the entry lands
+    on the 1m bar closing at that instant - the bar opening one minute earlier.
+    When the data has a gap there and no such 1m bar exists, the trigger is
+    dropped rather than pulled backwards, which would be reading the future.
+    """
+    bullish, bearish = pin_flags(pin, p)
+    fired = bullish | bearish
+    if not fired.any():
+        return pd.DataFrame({"pin_bull": False, "pin_bear": False}, index=m1_index)
+
+    closes = pin.index[fired] + timeframe_delta(p.pin_timeframe)
+    entries = closes - timeframe_delta(BASE_TIMEFRAME)
+
+    at = pd.DataFrame(
+        {"pin_bull": bullish[fired], "pin_bear": bearish[fired]}, index=entries
+    )
+    # Exact match only: an entry time missing from the 1m grid is a data gap.
+    return at.reindex(m1_index, fill_value=False).astype(bool)
+
+
+def engulfing_at(o: float, c: float, po: float, pc: float, direction: int) -> bool:
+    """A 1m candle in `direction` that swallows the previous candle's body."""
+    prev_low, prev_high = min(po, pc), max(po, pc)
+    if direction == 1:
+        return c > o and pc < po and o <= prev_low and c >= prev_high
+    return c < o and pc > po and o >= prev_high and c <= prev_low
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +310,8 @@ class IctSweepStrategy(Strategy):
         self._sweep_level = ctx["sweep_level"].to_numpy()
         self._equilibrium = ctx["equilibrium"].to_numpy()
         self._in_session = ctx["in_session"].to_numpy()
+        self._pin_bull = ctx["pin_bull"].to_numpy()
+        self._pin_bear = ctx["pin_bear"].to_numpy()
         self._atr = ctx["atr"].to_numpy()
 
         self._max_sl = p.max_sl_pips * p.pip_size
@@ -318,16 +369,20 @@ class IctSweepStrategy(Strategy):
                 self._reject("not_in_premium")
                 return
 
-        pattern = trigger_at(
+        # The pin bar closed on its own timeframe together with this 1m bar;
+        # engulfing is read on the 1m bar itself.
+        pin_fired = bool(self._pin_bull[i] if bias == 1 else self._pin_bear[i])
+        pattern = None
+        if p.allow_pin and pin_fired:
+            pattern = "pin"
+        elif p.allow_engulfing and engulfing_at(
             float(self.data.Open[-1]),
-            float(self.data.High[-1]),
-            float(self.data.Low[-1]),
             price,
             float(self.data.Open[-2]),
             float(self.data.Close[-2]),
             bias,
-            p,
-        )
+        ):
+            pattern = "engulfing"
         if pattern is None:
             self._reject("no_trigger")
             return
@@ -385,6 +440,12 @@ PARAM_UI: list[dict] = [
     {"name": "use_sessions", "label": "London + New York only", "group": "Filters"},
     {"name": "use_premium_discount", "label": "Premium / discount", "group": "Filters"},
     {"name": "allow_pin", "label": "Pin bar trigger", "group": "Filters"},
+    {
+        "name": "pin_timeframe",
+        "label": "Pin bar timeframe",
+        "group": "Filters",
+        "options": list(TIMEFRAMES),
+    },
     {"name": "allow_engulfing", "label": "Engulfing trigger", "group": "Filters"},
     {"name": "cash", "label": "Starting cash", "group": "Account", "unit": "$", "min": 1000, "max": 1_000_000, "step": 1000},
     {"name": "spread_usd", "label": "Spread", "group": "Account", "unit": "$", "min": 0, "max": 2, "step": 0.05},
@@ -396,8 +457,9 @@ class StrategyInfo:
     name = "ICT multi-timeframe liquidity sweep"
     description = (
         "1h break of structure sets the bias, a 15m liquidity sweep opens a 30 minute "
-        "window, and a 1m pin bar or engulfing candle triggers the entry. Buys only in "
-        "discount, sells only in premium, London and New York openings only."
+        "window, and a pin bar or engulfing candle triggers the entry. The pin bar is "
+        "read on the timeframe you pick; engulfing stays on 1m. Buys only in discount, "
+        "sells only in premium, London and New York openings only."
     )
     timeframes = {"bias": "1h", "liquidity": "15m", "trigger": "1m"}
     strategy = IctSweepStrategy

@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+import pandas as pd
+
 DATA_DIR = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
 
 # Base resolution of every CSV on disk. Everything else is resampled from it.
@@ -21,6 +23,14 @@ TIMEFRAMES: dict[str, str] = {
     "1d": "1D",
     "1w": "1W",
 }
+
+
+def timeframe_delta(label: str) -> pd.Timedelta:
+    """How long one bar of `label` lasts, e.g. "15m" -> 15 minutes."""
+    if label not in TIMEFRAMES:
+        raise KeyError(f"unknown timeframe '{label}'")
+    return pd.Timedelta(TIMEFRAMES[label])
+
 
 # Bars returned when the client does not ask for a specific amount.
 DEFAULT_LIMIT = 1500

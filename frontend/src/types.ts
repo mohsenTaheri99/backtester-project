@@ -31,18 +31,21 @@ export interface SymbolInfo {
 // ---------------------------------------------------------------------------
 // backtesting
 // ---------------------------------------------------------------------------
-export type ParamType = 'bool' | 'int' | 'float'
+export type ParamType = 'bool' | 'int' | 'float' | 'select'
+
+export type ParamValue = number | boolean | string
 
 export interface ParamControl {
   name: string
   label: string
   group: string
   type: ParamType
-  default: number | boolean
+  default: ParamValue
   unit?: string
   min?: number
   max?: number
   step?: number
+  options?: string[] // choices for a 'select' control
 }
 
 export interface StrategyInfo {
@@ -50,7 +53,7 @@ export interface StrategyInfo {
   name: string
   description: string
   timeframes: { bias: string; liquidity: string; trigger: string }
-  defaults: Record<string, number | boolean>
+  defaults: Record<string, ParamValue>
   params: ParamControl[]
 }
 
@@ -117,7 +120,7 @@ export interface BacktestSummary {
 export interface BacktestResult {
   strategy: { id: string; name: string; timeframes: Record<string, string> }
   symbol: string
-  params: Record<string, number | boolean>
+  params: Record<string, ParamValue>
   range: { from: number; to: number; bars: number }
   summary: BacktestSummary
   trades: Trade[]
