@@ -21,6 +21,7 @@ from .backtest import run_backtest
 from .config import DEFAULT_LIMIT, MAX_LIMIT, TIMEFRAMES, Symbol
 from .forward import forward
 from .live import feed
+from .market_hours import market_for
 from .providers import TwelveData, TwelveDataError
 from .providers.twelvedata import pages_for
 from .settings import settings
@@ -85,6 +86,7 @@ def _symbol_payload(symbol: Symbol) -> dict:
         "source": symbol.source,
         "provider": symbol.provider,
         "imported": symbol.imported,
+        "market": symbol.market,
         "live": bool(symbol.provider),
         "pricePrecision": symbol.price_precision,
         "bars": store.bar_count(symbol.id),
@@ -195,6 +197,7 @@ class ImportRequest(BaseModel):
     symbol: str = Field(..., description="provider ticker, e.g. XAU/USD")
     name: str = Field("", description="display name; defaults to the ticker")
     exchange: str = Field("", description="display exchange")
+    type: str = Field("", description="provider instrument type, e.g. 'Precious Metal'")
     days: int | None = Field(None, description="days of history; defaults to the setting")
 
 
@@ -239,6 +242,9 @@ def import_symbol(request: ImportRequest) -> dict:
         price_precision=_precision_for(frame),
         provider="twelvedata",
         imported=True,
+        market=market_for(ticker, request.type),
+        fetched_from=int(start.timestamp()),
+        fetched_to=int(end.timestamp()),
     )
     try:
         store.add_symbol(symbol, frame)
@@ -313,10 +319,20 @@ def _download(symbol_id: str, start: pd.Timestamp, end: pd.Timestamp) -> dict:
         for gap_start, gap_end in gaps:
             frame = client.range(symbol.source, gap_start.to_pydatetime(), gap_end.to_pydatetime(), "1min")
             added += store.merge_bars(symbol_id, frame)
+            store.record_fetch(symbol_id, gap_start, gap_end)
     except TwelveDataError as exc:
         # Keep whatever arrived before the failure; the caller can retry the rest.
+        store.clean(symbol_id)
         raise HTTPException(400, f"{exc} ({added} bars downloaded before it failed)") from exc
-    return {**_symbol_payload(symbol), "added": added, "credits": client.requests, "upToDate": False}
+
+    padded = store.clean(symbol_id)
+    return {
+        **_symbol_payload(symbol),
+        "added": added - padded,
+        "padded": padded,
+        "credits": client.requests,
+        "upToDate": False,
+    }
 
 
 @app.delete("/api/symbols/{symbol_id}")

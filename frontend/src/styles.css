@@ -1157,3 +1157,8 @@ body {
 .live-badge.other {
   color: var(--dim);
 }
+
+.pill.muted {
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.06);
+}

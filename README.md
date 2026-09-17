@@ -70,6 +70,27 @@ upgrades and uninstalls leave it alone.
 - **Forward test** - paper-trades the strategy on candles that arrive *after*
   you press Start, on the **forward** tab of the strategy panel.
 
+### Invented candles
+
+Spot FX and metals close for the weekend, but the feed keeps emitting 1-minute
+candles through it, holding the last price and jittering it by a few cents. On
+90 days of `XAU/USD` that was **28% of the file** - 36,360 candles whose whole
+weekend moves less than a dollar. Left in, they draw as a flat stretch on the
+chart and hand the strategy fake swing points, fake liquidity sweeps and a
+deflated ATR.
+
+They are detected rather than assumed from a calendar: providers disagree about
+when the week ends (this one closes at 22:00 UTC, an hour after New York's
+17:00) and no calendar knows about Good Friday. What padding always is, whatever
+the reason, is a long run of hours in which price does not move. Measured on
+that data the two populations do not overlap - quiet spells inside a trading
+week last at most 3 hours, every weekend at least 19 - so a run of 6 dead hours
+is the cut. Holidays are caught for free; July 4th showed up as an extended
+weekend.
+
+Only symbols classified as FX or metals are touched. An equity's thin
+pre-market hour is real trading and is left alone.
+
 ### Test range
 
 The **setup** tab takes a range - `7d / 30d / 90d / All`, or explicit UTC dates -

@@ -61,7 +61,7 @@ export default function MarketDataSection({ symbols, onSymbolsChanged }: Props) 
   const handleImport = (match: ProviderSymbol) =>
     run(
       `import:${match.symbol}`,
-      () => importSymbol(match.symbol, match.name, match.exchange),
+      () => importSymbol(match.symbol, match.name, match.exchange, match.type),
       (added: SymbolInfo) =>
         `Imported ${added.id} — ${added.bars.toLocaleString()} 1m bars. The chart is now showing it.`,
       (added: SymbolInfo) => added.id, // jump the chart to what was just imported
@@ -71,7 +71,9 @@ export default function MarketDataSection({ symbols, onSymbolsChanged }: Props) 
     <div className="market-data">
       <p className="field-help">
         Import a symbol to download its 1-minute history from Twelve Data. Imported symbols can
-        stream live prices and be forward tested; the bundled sample cannot.
+        stream live prices and be forward tested; the bundled sample cannot. For FX and metals the
+        candles the provider invents while the market is shut are detected and dropped, so a
+        weekend leaves a real gap rather than a flat line.
       </p>
 
       <div className="field">
@@ -138,6 +140,11 @@ export default function MarketDataSection({ symbols, onSymbolsChanged }: Props) 
               <td>
                 <b>{symbol.id}</b>
                 {symbol.live && <span className="pill">live</span>}
+                {symbol.market === 'fx' && (
+                  <span className="pill muted" title="Closed-market padding is removed">
+                    fx hours
+                  </span>
+                )}
                 <span className="dim block">
                   {symbol.bars.toLocaleString()} bars · to {when(symbol.to)} UTC
                 </span>

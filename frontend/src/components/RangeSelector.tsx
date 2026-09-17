@@ -85,7 +85,10 @@ export default function RangeSelector({ symbol, range, onChange, onDownloaded }:
             ? 'Already cached — no credits spent.'
             : `Downloaded ${result.added.toLocaleString()} bars for ${result.credits} credit${
                 result.credits === 1 ? '' : 's'
-              }.`,
+              }.` +
+              (result.padded
+                ? ` Dropped ${result.padded.toLocaleString()} padded bars from the closed market.`
+                : ''),
         )
         onDownloaded()
         refreshPlan()

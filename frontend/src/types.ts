@@ -23,6 +23,7 @@ export interface SymbolInfo {
   source: string
   provider: string
   imported: boolean
+  market: string // trading calendar: 'fx' drops out-of-hours padding
   live: boolean // has a data provider, so it can stream and be forward tested
   pricePrecision: number
   bars: number

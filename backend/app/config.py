@@ -55,6 +55,11 @@ class Symbol:
     price_precision: int = 2
     provider: str = ""  # "twelvedata" for imported symbols; "" cannot go live
     imported: bool = False  # user-added: candles live in USER_DATA_DIR and are ours to write
+    market: str = "always"  # trading calendar; see app.market_hours
+    # What has been *asked* of the provider, which is wider than the candles we
+    # kept: a closed weekend is fetched once and then correctly comes back empty.
+    fetched_from: int = 0
+    fetched_to: int = 0
 
     @property
     def path(self) -> Path:
@@ -70,6 +75,9 @@ class Symbol:
             "price_precision": self.price_precision,
             "provider": self.provider,
             "imported": self.imported,
+            "market": self.market,
+            "fetched_from": self.fetched_from,
+            "fetched_to": self.fetched_to,
         }
 
 

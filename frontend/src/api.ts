@@ -74,8 +74,8 @@ export const fetchProviderUsage = () => get<ProviderUsage>('/provider/usage')
 
 export const searchProvider = (q: string) => get<ProviderSymbol[]>('/provider/search', { q })
 
-export const importSymbol = (symbol: string, name: string, exchange: string) =>
-  send<SymbolInfo>('/symbols', 'POST', { symbol, name, exchange })
+export const importSymbol = (symbol: string, name: string, exchange: string, type: string) =>
+  send<SymbolInfo>('/symbols', 'POST', { symbol, name, exchange, type })
 
 export const refreshSymbol = (id: string) =>
   send<SymbolInfo & { added: number }>(`/symbols/${encodeURIComponent(id)}/refresh`, 'POST')
@@ -84,7 +84,7 @@ export const fetchRangePlan = (id: string, start: number, end: number) =>
   get<RangePlan>(`/symbols/${encodeURIComponent(id)}/range`, { start, end })
 
 export const downloadRange = (id: string, start: number, end: number) =>
-  send<SymbolInfo & { added: number; credits: number; upToDate: boolean }>(
+  send<SymbolInfo & { added: number; padded: number; credits: number; upToDate: boolean }>(
     `/symbols/${encodeURIComponent(id)}/range`,
     'POST',
     { start, end },

@@ -8,11 +8,12 @@ downloaded or a live bar arrives, so a restart picks up where the app left off.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pandas as pd
 
 from .config import MAX_LIMIT, SYMBOLS, TIMEFRAMES, Symbol
+from .market_hours import drop_padding, market_for
 from .settings import settings
 
 _OHLCV = {
@@ -56,7 +57,13 @@ class CandleStore:
     # -- loading -----------------------------------------------------------
     def load(self) -> None:
         self._symbols = dict(SYMBOLS)
+        migrated = False
         for entry in settings.get_state("symbols", []) or []:
+            # Symbols catalogued before a field existed get it filled in here,
+            # rather than silently taking a default that is wrong for them.
+            if "market" not in entry:
+                entry["market"] = market_for(entry.get("source", ""))
+                migrated = True
             try:
                 symbol = Symbol(**entry)
             except TypeError as exc:
@@ -74,8 +81,18 @@ class CandleStore:
                 )
                 print(f"[store] missing {path} - {hint}")
                 continue
-            self._base[symbol.id] = self._read_csv(path)
-            print(f"[store] {symbol.id}: {len(self._base[symbol.id])} 1m bars from {path.name}")
+            raw = self._read_csv(path)
+            kept = drop_padding(raw, symbol.market)
+            self._base[symbol.id] = kept
+            padded = len(raw) - len(kept)
+            note = f" ({padded} padded bars dropped)" if padded else ""
+            print(f"[store] {symbol.id}: {len(kept)} 1m bars from {path.name}{note}")
+            if padded and symbol.imported:
+                # Rewrite once so the cost is paid at this start, not every start.
+                self._write_csv(path, kept)
+
+        if migrated:
+            self._persist_catalog()
 
     @staticmethod
     def _read_csv(path) -> pd.DataFrame:
@@ -111,6 +128,7 @@ class CandleStore:
 
     def add_symbol(self, symbol: Symbol, frame: pd.DataFrame) -> Symbol:
         """Register an imported symbol and write its candles to the user's data dir."""
+        frame = drop_padding(frame, symbol.market)
         if frame.empty:
             raise ValueError(f"no candles returned for {symbol.source}")
         with self._lock:
@@ -232,6 +250,45 @@ class CandleStore:
         df = self._base.get(symbol_id)
         return 0 if df is None else len(df)
 
+    def clean(self, symbol_id: str) -> int:
+        """Drop invented candles from the whole series. Returns how many went.
+
+        Judging one poll's worth of bars is impossible - padding is only visible
+        against a long run - so this is called after a bulk download, not on
+        every live tick.
+        """
+        symbol = self._symbols.get(symbol_id)
+        if symbol is None:
+            return 0
+        with self._lock:
+            current = self._base.get(symbol_id)
+            if current is None or current.empty:
+                return 0
+            kept = drop_padding(current, symbol.market)
+            dropped = len(current) - len(kept)
+            if not dropped:
+                return 0
+            self._base[symbol_id] = kept
+            self._drop_derived(symbol_id)
+            if symbol.imported:
+                self._write_csv(symbol.path, kept)
+        return dropped
+
+    def record_fetch(self, symbol_id: str, start: pd.Timestamp, end: pd.Timestamp) -> None:
+        """Remember that this span was asked for, whatever came back."""
+        symbol = self._symbols.get(symbol_id)
+        if symbol is None:
+            return
+        first = int(start.timestamp())
+        last = int(end.timestamp())
+        with self._lock:
+            self._symbols[symbol_id] = replace(
+                symbol,
+                fetched_from=min(first, symbol.fetched_from or first),
+                fetched_to=max(last, symbol.fetched_to),
+            )
+        self._persist_catalog()
+
     def missing_ranges(
         self, symbol_id: str, start: pd.Timestamp, end: pd.Timestamp
     ) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
@@ -241,11 +298,18 @@ class CandleStore:
         and market closures, not missing data, and chasing them would spend a
         credit every time to be told the market was shut.
         """
+        symbol = self._symbols.get(symbol_id)
         df = self._base.get(symbol_id)
-        if df is None or df.empty:
-            return [(start, end)]
 
-        first, last = df.index[0], df.index[-1]
+        # Prefer the span we have asked the provider for. A closed weekend is
+        # fetched once, kept by nobody, and must not be requested again.
+        if symbol is not None and symbol.fetched_from and symbol.fetched_to:
+            first = pd.Timestamp(symbol.fetched_from, unit="s", tz="UTC")
+            last = pd.Timestamp(symbol.fetched_to, unit="s", tz="UTC")
+        elif df is not None and not df.empty:
+            first, last = df.index[0], df.index[-1]
+        else:
+            return [(start, end)]
         gaps: list[tuple[pd.Timestamp, pd.Timestamp]] = []
         if start < first:
             gaps.append((start, min(end, first)))
