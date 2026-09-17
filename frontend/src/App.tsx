@@ -44,6 +44,7 @@ const TOOL_SHORTCUTS: Record<string, ToolId> = {
   KeyJ: 'hray',
   KeyV: 'vline',
   KeyF: 'fib',
+  KeyM: 'measure',
 }
 
 export default function App() {

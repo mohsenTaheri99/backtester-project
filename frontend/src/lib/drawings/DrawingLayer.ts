@@ -590,7 +590,10 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
   private paintMeasure(ctx: CanvasRenderingContext2D, d: Drawing, a: Px, b: Px): void {
     const [start, end] = d.points
     const up = end.price >= start.price
-    const color = up ? '#2962ff' : '#ef5350'
+    // Green up, red down, as TradingView's ruler reads - the direction is the
+    // first thing you want from a measurement, so it carries the colour rather
+    // than the drawing's own palette entry.
+    const color = up ? '#26a69a' : '#ef5350'
     const left = Math.min(a.x, b.x)
     const top = Math.min(a.y, b.y)
     const w = Math.abs(b.x - a.x)
@@ -598,6 +601,9 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
 
     ctx.fillStyle = withAlpha(color, 0.16)
     ctx.fillRect(left, top, w, h)
+    ctx.strokeStyle = withAlpha(color, 0.9)
+    ctx.lineWidth = 1
+    ctx.strokeRect(left + 0.5, top + 0.5, w, h)
 
     // Arrows along the middle of each axis.
     ctx.strokeStyle = color

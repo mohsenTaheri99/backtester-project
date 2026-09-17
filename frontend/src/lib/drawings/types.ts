@@ -61,7 +61,7 @@ export const TOOLS: Record<ToolId, ToolSpec> = {
   fib: { id: 'fib', label: 'Fib retracement', shortcut: 'Alt+F', placement: 'two-point', defaultColor: '#7c879a' },
   long: { id: 'long', label: 'Long position', placement: 'one-click', defaultColor: '#26a69a' },
   short: { id: 'short', label: 'Short position', placement: 'one-click', defaultColor: '#ef5350' },
-  measure: { id: 'measure', label: 'Price / date range', placement: 'two-point', defaultColor: '#2962ff' },
+  measure: { id: 'measure', label: 'Measure', shortcut: 'Alt+M', placement: 'two-point', defaultColor: '#2962ff' },
   text: { id: 'text', label: 'Text', placement: 'one-click', defaultColor: '#e6ecf5' },
   brush: { id: 'brush', label: 'Brush', placement: 'freehand', defaultColor: '#ff9800' },
 }

@@ -15,28 +15,114 @@ interface Props {
 }
 
 const svg = (children: ReactNode) => (
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    viewBox="0 0 24 24"
+    width="20"
+    height="20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     {children}
   </svg>
 )
 
-const dot = (cx: number, cy: number) => <circle cx={cx} cy={cy} r="1.8" fill="currentColor" stroke="none" />
+/**
+ * A drawing's draggable end, as a small hollow ring. TradingView marks anchors
+ * this way, and hollow reads as "grab me" where a filled dot reads as ink.
+ *
+ * Genuinely unfilled rather than filled with the panel colour: the button has
+ * its own background when hovered and when active, and a fill would show as a
+ * mismatched disc in both.
+ */
+const ring = (cx: number, cy: number) => <circle cx={cx} cy={cy} r="2.1" strokeWidth="1.4" />
 
 export const TOOL_ICONS: Record<ToolId, ReactNode> = {
-  cursor: svg(<path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1-2.6-6.6L6 18z" />),
-  trendline: svg(<>{dot(5, 19)}{dot(19, 5)}<path d="M6.3 17.7L17.7 6.3" /></>),
-  ray: svg(<>{dot(5, 19)}{dot(13, 11)}<path d="M6.3 17.7L21 3" /></>),
-  extended: svg(<>{dot(9, 15)}{dot(15, 9)}<path d="M3 21L21 3" /></>),
-  hline: svg(<>{dot(12, 12)}<path d="M2 12h8M14 12h8" /></>),
-  hray: svg(<>{dot(6, 12)}<path d="M8 12h14" /></>),
-  vline: svg(<>{dot(12, 12)}<path d="M12 2v8M12 14v8" /></>),
-  rect: svg(<><rect x="4" y="6" width="16" height="12" rx="1" />{dot(4, 6)}{dot(20, 18)}</>),
-  fib: svg(<path d="M3 4h18M3 9h18M3 13h18M3 17h18M3 21h18M5 21L19 4" strokeDasharray="0" />),
-  long: svg(<><rect x="4" y="4" width="16" height="9" fill="currentColor" fillOpacity="0.25" /><rect x="4" y="13" width="16" height="6" /><path d="M8 10l4-4 4 4" /></>),
-  short: svg(<><rect x="4" y="5" width="16" height="6" /><rect x="4" y="11" width="16" height="9" fill="currentColor" fillOpacity="0.25" /><path d="M8 14l4 4 4-4" /></>),
-  measure: svg(<><path d="M12 3v18M3 12h18" /><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" /></>),
-  text: svg(<path d="M5 6V4h14v2M12 4v16M9 20h6" />),
-  brush: svg(<path d="M3 17c3-1 4-5 7-5s2 5 5 5 4-6 6-9" />),
+  cursor: svg(
+    <path
+      d="M5.5 2.8v15.6l4-3.8 2.6 6 2.7-1.2-2.6-5.8 5.4-.9z"
+      fill="currentColor"
+      fillOpacity="0.18"
+    />,
+  ),
+  trendline: svg(
+    <>
+      <path d="M7.4 16.6L16.6 7.4" />
+      {ring(5.5, 18.5)}
+      {ring(18.5, 5.5)}
+    </>,
+  ),
+  ray: svg(
+    <>
+      <path d="M7.4 16.6L21.5 2.5" />
+      <path d="M17.5 2.5h4v4" />
+      {ring(5.5, 18.5)}
+    </>,
+  ),
+  extended: svg(
+    <>
+      <path d="M2.5 21.5L21.5 2.5" />
+      {ring(9, 15)}
+      {ring(15, 9)}
+    </>,
+  ),
+  hline: svg(
+    <>
+      <path d="M2.5 12h7M14.5 12h7" />
+      {ring(12, 12)}
+    </>,
+  ),
+  hray: svg(
+    <>
+      <path d="M8.1 12h13.4" />
+      <path d="M18.5 9l3 3-3 3" />
+      {ring(6, 12)}
+    </>,
+  ),
+  vline: svg(
+    <>
+      <path d="M12 2.5v7M12 14.5v7" />
+      {ring(12, 12)}
+    </>,
+  ),
+  rect: svg(
+    <>
+      <rect x="4.5" y="6.5" width="15" height="11" rx="1" />
+      {ring(4.5, 6.5)}
+      {ring(19.5, 17.5)}
+    </>,
+  ),
+  fib: svg(
+    <>
+      <path d="M3 5h18M3 9.5h18M3 14.5h18M3 19h18" strokeOpacity="0.85" />
+      <path d="M5.5 19L18.5 5" strokeOpacity="0.5" />
+    </>,
+  ),
+  long: svg(
+    <>
+      <rect x="4.5" y="4.5" width="15" height="7.5" fill="currentColor" fillOpacity="0.22" />
+      <rect x="4.5" y="12" width="15" height="7.5" fill="currentColor" fillOpacity="0.07" />
+      <path d="M12 16.5v-8M9.2 11.3L12 8.5l2.8 2.8" />
+    </>,
+  ),
+  short: svg(
+    <>
+      <rect x="4.5" y="4.5" width="15" height="7.5" fill="currentColor" fillOpacity="0.07" />
+      <rect x="4.5" y="12" width="15" height="7.5" fill="currentColor" fillOpacity="0.22" />
+      <path d="M12 7.5v8M9.2 12.7L12 15.5l2.8-2.8" />
+    </>,
+  ),
+  measure: svg(
+    <>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="1" strokeDasharray="2.6 2.2" strokeOpacity="0.6" />
+      <path d="M8 12h8" />
+      <path d="M10 9.7L7.6 12l2.4 2.3M14 9.7l2.4 2.3-2.4 2.3" />
+    </>,
+  ),
+  text: svg(<path d="M4.5 7V4.5h15V7M12 4.5v15M8.5 19.5h7" />),
+  brush: svg(<path d="M3 16.5c2.4-.6 3.4-4.6 6.2-4.6s2.2 4.6 4.6 4.6 3.4-5.4 7.2-8.4" />),
 }
 
 /** Tools grouped the way TradingView's left rail groups them. */
@@ -46,7 +132,10 @@ const GROUPS: { id: string; label: string; tools: ToolId[] }[] = [
   { id: 'fib', label: 'Fibonacci', tools: ['fib'] },
   { id: 'shapes', label: 'Shapes', tools: ['rect', 'brush'] },
   { id: 'text', label: 'Text', tools: ['text'] },
-  { id: 'forecast', label: 'Prediction and measurement', tools: ['long', 'short', 'measure'] },
+  // Measure earns its own slot: it is the tool reached for most often, and a
+  // flyout it shared with the position tools kept it hidden behind them.
+  { id: 'measure', label: 'Measure', tools: ['measure'] },
+  { id: 'forecast', label: 'Prediction', tools: ['long', 'short'] },
 ]
 
 const tooltip = (tool: ToolId) => {
