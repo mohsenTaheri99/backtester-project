@@ -64,9 +64,11 @@ upgrades and uninstalls leave it alone.
   its 1-minute history, then update or remove it later. Imported candles live in
   `%LOCALAPPDATA%\GoldBacktester\data`. Downloads are paced to the plan's
   requests-a-minute so a long one cannot die half way with a 429.
-- **Live data** - polls the provider for new 1-minute candles and appends them
-  to the chart. A free plan allows 8 requests a minute and 800 a day, so the
-  default 60s interval costs 60 credits an hour.
+- **Live data** - the **Live** button in the toolbar starts and stops streaming,
+  with the last price, its direction and the age of the last update beside it.
+  It is greyed out for a symbol with no data provider, since there is nothing to
+  stream. The interval lives in Settings; at the default 60s a session costs 60
+  credits an hour.
 - **Forward test** - paper-trades the strategy on candles that arrive *after*
   you press Start, on the **forward** tab of the strategy panel.
 

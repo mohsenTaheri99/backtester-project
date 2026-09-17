@@ -1,5 +1,7 @@
 import { since } from '../lib/format'
-import type { LiveStatus, SymbolInfo } from '../types'
+import { colors } from '../lib/theme'
+import { useTicker } from '../lib/useTicker'
+import type { Candle, LiveStatus, SymbolInfo } from '../types'
 
 interface Props {
   symbols: SymbolInfo[]
@@ -11,6 +13,11 @@ interface Props {
   hasTrades: boolean
   loading: boolean
   live: LiveStatus | null
+  lastCandle: Candle | null
+  previousClose: number | null
+  liveBusy: boolean
+  liveError: string | null
+  onToggleLive: () => void
   onSymbolChange: (id: string) => void
   onTimeframeChange: (tf: string) => void
   onToggleVolume: () => void
@@ -28,6 +35,11 @@ export default function Toolbar({
   hasTrades,
   loading,
   live,
+  lastCandle,
+  previousClose,
+  liveBusy,
+  liveError,
+  onToggleLive,
   onSymbolChange,
   onTimeframeChange,
   onToggleVolume,
@@ -35,17 +47,38 @@ export default function Toolbar({
   onOpenSettings,
 }: Props) {
   const active = symbols.find((s) => s.id === symbol)
-  const streaming = Boolean(live?.enabled && live.symbol === symbol)
+  const canGoLive = Boolean(active?.live)
+  const enabled = Boolean(live?.enabled)
+  const streaming = enabled && live?.symbol === symbol
   // A forward test can hold the feed on another symbol; say which, so a quiet
   // chart does not read as a broken feed.
-  const elsewhere = Boolean(live?.enabled && live.symbol && live.symbol !== symbol)
-  // Live is possible here but switched off: say so, rather than showing nothing.
-  const dormant = Boolean(active?.live && !live?.enabled)
-  const liveTitle = !live?.enabled
-    ? 'Live prices are off - turn them on in Settings'
-    : live.lastError
-      ? live.lastError
-      : `Last poll ${since(live.lastPollAt)}, every ${live.intervalSeconds}s`
+  const elsewhere = enabled && Boolean(live?.symbol) && live?.symbol !== symbol
+
+  // Only tick the clock while it is showing something that ages.
+  useTicker(enabled)
+
+  const liveTitle = liveError
+    ? liveError
+    : !canGoLive
+    ? `${symbol} has no data provider - import a symbol from Twelve Data to stream it`
+    : !enabled
+      ? 'Start streaming live candles'
+      : live?.lastError
+        ? live.lastError
+        : elsewhere
+          ? `Streaming ${live?.symbol} for the forward test, not the chart's symbol`
+          : `Streaming every ${live?.intervalSeconds}s - last update ${since(live?.lastPollAt)}`
+
+  const price = lastCandle?.close ?? null
+  const change = price !== null && previousClose !== null ? price - previousClose : null
+  const liveClass = [
+    'toggle',
+    'live-toggle',
+    enabled ? 'active' : '',
+    liveError || (enabled && live?.lastError) ? 'error' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <header className="toolbar">
@@ -103,29 +136,35 @@ export default function Toolbar({
       )}
       {loading && <span className="meta loading">loading...</span>}
 
-      {elsewhere && (
-        <span className="live-badge other" title={`Live feed is on ${live?.symbol} for the forward test`}>
-          <span className="pulse on" />
-          live: {live?.symbol}
+      <button
+        type="button"
+        className={liveClass}
+        onClick={onToggleLive}
+        disabled={!canGoLive || liveBusy}
+        title={liveTitle}
+        aria-pressed={enabled}
+      >
+        <span className={streaming && !live?.lastError ? 'pulse on' : 'pulse'} />
+        {liveBusy ? '…' : 'Live'}
+      </button>
+
+      {enabled && price !== null && (
+        <span className="live-price" title={liveTitle}>
+          <b style={change ? { color: change > 0 ? colors.up : colors.down } : undefined}>
+            {price.toFixed(active?.pricePrecision ?? 2)}
+          </b>
+          {change !== null && change !== 0 && (
+            <span className="live-arrow" style={{ color: change > 0 ? colors.up : colors.down }}>
+              {change > 0 ? '▲' : '▼'}
+            </span>
+          )}
+          <span className="dim">{live?.lastError ? 'error' : since(live?.lastPollAt)}</span>
         </span>
       )}
 
-      {dormant && (
-        <button
-          type="button"
-          className="live-badge off"
-          onClick={onOpenSettings}
-          title="Live prices are off - click to turn them on"
-        >
-          <span className="pulse" />
-          live off
-        </button>
-      )}
-
-      {streaming && (
-        <span className={live?.lastError ? 'live-badge error' : 'live-badge'} title={liveTitle}>
-          <span className={live?.lastError ? 'pulse' : 'pulse on'} />
-          {live?.lastError ? 'live error' : 'live'}
+      {elsewhere && (
+        <span className="meta" title={liveTitle}>
+          on {live?.symbol}
         </span>
       )}
 

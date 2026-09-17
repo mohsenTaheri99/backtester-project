@@ -96,6 +96,10 @@ export const deleteSymbol = (id: string) =>
 // --- live data --------------------------------------------------------------
 export const fetchLiveStatus = (symbol?: string) => get<LiveStatus>('/live', { symbol })
 
+/** The toolbar's LIVE switch. Settings is the single source of truth for it. */
+export const setLiveEnabled = (enabled: boolean) =>
+  send<SettingsSchema>('/settings', 'PUT', { values: { live_enabled: enabled } })
+
 export const pollLive = (symbol?: string) =>
   send<LiveStatus & { added: number }>(`/live/poll${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`, 'POST')
 

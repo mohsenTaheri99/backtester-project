@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
 import Stat from './Stat'
 import { colors } from '../lib/theme'
 import { clock, num, since } from '../lib/format'
+import { useTicker } from '../lib/useTicker'
 import type { ForwardState, SymbolInfo, Trade } from '../types'
 
 interface Props {
@@ -22,16 +22,6 @@ const EXIT_LABELS: Record<string, string> = {
   break_even: 'BE',
   closed_win: 'end +',
   closed_loss: 'end -',
-}
-
-/** Re-renders once a second so "3m ago" stays true between polls. */
-function useTicker(active: boolean) {
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    if (!active) return
-    const id = window.setInterval(() => setTick((t) => t + 1), 1000)
-    return () => window.clearInterval(id)
-  }, [active])
 }
 
 export default function ForwardSection({
@@ -74,11 +64,8 @@ export default function ForwardSection({
             </div>
             {!live?.enabled && (
               <p className="warn small">
-                Live prices are switched off, so no new candles will arrive.{' '}
-                <button type="button" className="link-button inline" onClick={onOpenSettings}>
-                  Turn them on in Settings
-                </button>
-                .
+                Live prices are switched off, so no new candles will arrive. Press{' '}
+                <b>Live</b> in the toolbar to start streaming.
               </p>
             )}
           </>
@@ -118,7 +105,7 @@ export default function ForwardSection({
           ? `Polling every ${live.intervalSeconds}s · last ${since(live.lastPollAt)} · ${
               live.polls
             } polls`
-          : 'Live prices are off — the session is paused until you turn them back on.'}
+          : 'Live prices are off — press Live in the toolbar to resume the session.'}
         {result?.lastBarTime ? ` · last bar ${clock(result.lastBarTime)} UTC` : ''}
       </p>
 

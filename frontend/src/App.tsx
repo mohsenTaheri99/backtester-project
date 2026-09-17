@@ -13,6 +13,7 @@ import {
   fetchStrategies,
   fetchSymbols,
   runBacktest,
+  setLiveEnabled,
   startForward,
   stopForward,
 } from './api'
@@ -69,6 +70,8 @@ export default function App() {
   const [live, setLive] = useState<LiveStatus | null>(null)
   const [forward, setForward] = useState<ForwardState | null>(null)
   const [forwardStarting, setForwardStarting] = useState(false)
+  const [liveBusy, setLiveBusy] = useState(false)
+  const [liveError, setLiveError] = useState<string | null>(null)
   // Bumped by the live poller so the chart reloads only when candles changed.
   const [liveTick, setLiveTick] = useState(0)
   // Bumped after a download, when history changed and the chart must reload.
@@ -255,6 +258,22 @@ export default function App() {
       .finally(() => setRunning(false))
   }, [params, range, strategy, symbol])
 
+  /** The toolbar's LIVE switch. Flip it optimistically so the click feels instant. */
+  const handleToggleLive = useCallback(() => {
+    const next = !live?.enabled
+    setLiveBusy(true)
+    setLiveError(null)
+    setLive((current) => (current ? { ...current, enabled: next } : current))
+    setLiveEnabled(next)
+      .then(() => syncLive(symbol))
+      .catch((err: Error) => {
+        // Not the chart's error state: a refused toggle must not blank the chart.
+        setLiveError(err.message)
+        return syncLive(symbol) // put the switch back where the backend has it
+      })
+      .finally(() => setLiveBusy(false))
+  }, [live, symbol, syncLive])
+
   const handleStartForward = useCallback(() => {
     if (!strategy) return
     setForwardStarting(true)
@@ -324,6 +343,11 @@ export default function App() {
         hasTrades={Boolean(result?.trades.length)}
         loading={loading}
         live={live}
+        lastCandle={candles[candles.length - 1] ?? null}
+        previousClose={candles[candles.length - 2]?.close ?? null}
+        liveBusy={liveBusy}
+        liveError={liveError}
+        onToggleLive={handleToggleLive}
         onSymbolChange={setSymbol}
         onTimeframeChange={setTimeframe}
         onToggleVolume={() => setShowVolume((v) => !v)}

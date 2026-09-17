@@ -1162,3 +1162,36 @@ body {
   color: var(--dim);
   background: rgba(255, 255, 255, 0.06);
 }
+
+.live-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.live-toggle:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.live-toggle.error {
+  border-color: var(--down);
+  color: var(--down);
+}
+
+.live-price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.live-price .live-arrow {
+  font-size: 9px;
+}
+
+.live-price .dim {
+  font-size: 11px;
+}
