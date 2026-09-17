@@ -183,7 +183,37 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [symbol, timeframe, liveTick])
+  }, [symbol, timeframe])
+
+  // Live candles: fold the newest few bars into what is already drawn, rather
+  // than refetching the page, so scrolled-back history and the view are kept.
+  useEffect(() => {
+    if (!liveTick) return
+    let cancelled = false
+
+    fetchCandles(symbol, timeframe, { limit: 3 })
+      .then((res) => {
+        if (cancelled || !res.candles.length) return
+        setCandles((current) => {
+          if (!current.length) return res.candles
+          const merged = [...current]
+          for (const candle of res.candles) {
+            const at = merged.findIndex((existing) => existing.time === candle.time)
+            // The newest bar is still forming, so an existing one is replaced.
+            if (at >= 0) merged[at] = candle
+            else if (candle.time > merged[merged.length - 1].time) merged.push(candle)
+          }
+          return merged
+        })
+      })
+      .catch(() => undefined) // a missed tick is corrected by the next one
+
+    return () => {
+      cancelled = true
+    }
+    // `symbol`/`timeframe` changes are handled by the loader above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTick])
 
   const loadOlder = useCallback(() => {
     if (loadingMoreRef.current || !hasMore || candles.length === 0) return

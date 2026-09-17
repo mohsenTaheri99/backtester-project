@@ -29,6 +29,9 @@ STATE_KEY = "forward"
 class ForwardTester:
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        # Held for the whole replay so a live tick and a status request cannot
+        # run the same backtest twice at once.
+        self._compute_lock = threading.Lock()
         self._session: dict[str, Any] | None = None
         self._result: dict[str, Any] | None = None
         self._computed_version: int | None = None
@@ -96,6 +99,10 @@ class ForwardTester:
             self._recompute(session)
 
     def _recompute(self, session: dict[str, Any]) -> None:
+        with self._compute_lock:
+            self._replay(session)
+
+    def _replay(self, session: dict[str, Any]) -> None:
         symbol_id = session["symbol"]
         version = store.version(symbol_id)
         overrides = {

@@ -153,9 +153,12 @@ class CandleStore:
             merged = merged[~merged.index.duplicated(keep="last")].sort_index()
             self._base[symbol_id] = merged.astype(_DTYPES)
             self._drop_derived(symbol_id)
-            if symbol.imported:
+            added = len(self._base[symbol_id]) - before
+            # Half the polls only revise the bar that is still forming; waiting
+            # for one to close halves the rewrites of a file that grows forever.
+            if symbol.imported and added:
                 self._write_csv(symbol.path, self._base[symbol_id])
-        return len(self._base[symbol_id]) - before
+        return added
 
     def _drop_derived(self, symbol_id: str) -> None:
         """Every resampled timeframe of this symbol is now stale. Caller holds the lock."""
