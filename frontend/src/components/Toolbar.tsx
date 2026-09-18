@@ -65,11 +65,13 @@ export default function Toolbar({
     ? `${symbol} has no data provider - import a symbol from Twelve Data to stream it`
     : !enabled
       ? 'Start streaming live candles'
-      : live?.lastError
-        ? live.lastError
-        : elsewhere
-          ? `Streaming ${live?.symbol} for the forward test, not the chart's symbol`
-          : `Streaming every ${live?.intervalSeconds}s - last update ${since(live?.lastPollAt)}`
+      : live?.catchingUp
+        ? 'Downloading the candles missed while the app was closed'
+        : live?.lastError
+          ? live.lastError
+          : elsewhere
+            ? `Streaming ${live?.symbol} for the forward test, not the chart's symbol`
+            : `Streaming every ${live?.intervalSeconds}s - last update ${since(live?.lastPollAt)}`
 
   const price = lastCandle?.close ?? null
   const change = price !== null && previousClose !== null ? price - previousClose : null
@@ -161,7 +163,9 @@ export default function Toolbar({
               {change > 0 ? '▲' : '▼'}
             </span>
           )}
-          <span className="dim">{live?.lastError ? 'error' : since(live?.lastPollAt)}</span>
+          <span className="dim">
+            {live?.catchingUp ? 'catching up' : live?.lastError ? 'error' : since(live?.lastPollAt)}
+          </span>
         </span>
       )}
 

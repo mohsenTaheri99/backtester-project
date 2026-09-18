@@ -230,6 +230,7 @@ export interface LiveStatus {
   lastAdded: number
   polls: number
   lastBarTime: number | null
+  catchingUp: boolean // downloading the span missed while the app was closed
 }
 
 export interface ForwardSession {

@@ -274,14 +274,12 @@ class CandleStore:
         symbol = self._symbols.get(symbol_id)
         if symbol is None:
             return
-        first = int(start.timestamp())
-        last = int(end.timestamp())
+        first = min(int(start.timestamp()), symbol.fetched_from or int(start.timestamp()))
+        last = max(int(end.timestamp()), symbol.fetched_to)
+        if (first, last) == (symbol.fetched_from, symbol.fetched_to):
+            return  # nothing new was asked for; the live poll says this every minute
         with self._lock:
-            self._symbols[symbol_id] = replace(
-                symbol,
-                fetched_from=min(first, symbol.fetched_from or first),
-                fetched_to=max(last, symbol.fetched_to),
-            )
+            self._symbols[symbol_id] = replace(symbol, fetched_from=first, fetched_to=last)
         self._persist_catalog()
 
     def missing_ranges(

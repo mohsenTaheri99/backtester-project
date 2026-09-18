@@ -4,7 +4,9 @@ One daemon thread runs for the life of the process and idles while live data is
 switched off, so toggling the setting takes effect on the next tick with nothing
 to restart. Each tick asks the provider for the last few hundred 1-minute
 candles and folds them into the store; the newest one is still forming, so it is
-overwritten on every poll until it closes.
+overwritten on every poll until it closes. A tick that finds the symbol further
+behind than one request reaches downloads the missing span first, so live
+candles are never merged onto candles they do not follow.
 
 Twelve Data's websocket needs a paid plan, and their free plan allows 8 requests
 a minute, so polling REST is both the compatible and the cheaper option: at the
@@ -15,6 +17,8 @@ from __future__ import annotations
 import threading
 import time
 from typing import Callable
+
+import pandas as pd
 
 from .providers import TwelveData, TwelveDataError
 from .settings import settings
@@ -43,6 +47,7 @@ class LiveFeed:
             "lastAdded": 0,
             "polls": 0,
             "lastBarTime": None,
+            "catchingUp": False,
         }
         # Set by the UI: whichever symbol the chart is showing.
         self._chart_symbol: str | None = None
@@ -145,6 +150,48 @@ class LiveFeed:
         self._wake.wait(seconds)
         self._wake.clear()
 
+    def _catch_up(self, symbol, client: TwelveData) -> int:
+        """Download the candles the app missed while it was not running.
+
+        A poll reaches POLL_BARS minutes back and no further. A symbol last seen
+        yesterday would have this minute's candle merged straight onto
+        yesterday's last one: the chart draws them as neighbours and the hole
+        between them disappears into a line that was never traded. So fill the
+        hole first, the way the Update button does, and let the poll append to
+        candles that really do lead up to it.
+        """
+        last = store.last_bar_time(symbol.id)
+        if last is None:
+            return 0  # no history to be continuous with; importing is the job for that
+
+        now = pd.Timestamp.now(tz="UTC")
+        start = pd.Timestamp(last, unit="s", tz="UTC")
+        # Measure the gap from how far the provider has been asked, not from the
+        # newest candle: over a weekend those are days apart, and asking again
+        # every tick would spend a credit a minute to be told the market is shut.
+        asked = pd.Timestamp(max(last, symbol.fetched_to), unit="s", tz="UTC")
+        if now - asked <= pd.Timedelta(minutes=POLL_BARS):
+            return 0  # this tick's own request reaches back far enough
+
+        gaps = store.missing_ranges(symbol.id, start, now)
+        if not gaps:
+            return 0
+
+        self._set(catchingUp=True)
+        added = 0
+        try:
+            for gap_start, gap_end in gaps:
+                frame = client.range(
+                    symbol.source, gap_start.to_pydatetime(), gap_end.to_pydatetime(), "1min"
+                )
+                added += store.merge_bars(symbol.id, frame)
+                store.record_fetch(symbol.id, gap_start, gap_end)
+        finally:
+            self._set(catchingUp=False)
+        if added:
+            added = max(0, added - store.clean(symbol.id))  # the market was shut for some of it
+        return added
+
     def poll_once(self, symbol_id: str) -> int:
         """One request. Returns how many candles were new; never raises."""
         symbol = store.symbol(symbol_id)
@@ -157,8 +204,14 @@ class LiveFeed:
                 str(settings.get("twelvedata_api_key") or ""),
                 int(settings.get("provider_credits_per_minute") or 8),
             )
+            filled = self._catch_up(symbol, client)
             frame = client.latest(symbol.source, "1min", POLL_BARS)
-            added = store.merge_bars(symbol_id, frame)
+            added = filled + store.merge_bars(symbol_id, frame)
+            if not frame.empty:
+                # Keep the record of what has been asked for level with the data,
+                # so the next catch-up measures the gap from this poll and not
+                # from whenever the symbol was last downloaded by hand.
+                store.record_fetch(symbol_id, frame.index[0], frame.index[-1])
         except TwelveDataError as exc:
             self._set(lastError=str(exc), lastPollAt=time.time())
             return 0
