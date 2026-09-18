@@ -7,10 +7,9 @@ from pathlib import Path
 
 import pandas as pd
 
-# The one place the app version lives. desktop/scripts/build.mjs reads it from
-# here for the setup file name and the installer, and the UI shows it in
-# Settings, so a customer reporting a bug can say which build they are on.
-APP_VERSION = "0.2.0"
+# Re-exported so importers keep getting the version from config, where it used
+# to live; see version.py for why it now sits in a module of its own.
+from .version import APP_VERSION as APP_VERSION
 
 DATA_DIR = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
 

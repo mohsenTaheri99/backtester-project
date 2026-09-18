@@ -84,11 +84,11 @@ Identical backtest requests are cached until the app restarts.
 | Change installer text, shortcuts, publisher | `desktop/installer.nsi` |
 | Add a setting | one `SettingDef` in `backend/app/settings.py` |
 | Add a market data provider | a client in `backend/app/providers/`, shaped like `twelvedata.py` |
-| Release a new version | bump `APP_VERSION` in `backend/app/config.py`, then `npm run dist` |
+| Release a new version | bump `APP_VERSION` in `backend/app/version.py`, then `npm run dist` |
 
 ## Versioning
 
-`APP_VERSION` in `backend/app/config.py` is the only place the version is
+`APP_VERSION` in `backend/app/version.py` is the only place the version is
 written. The running app reports it on `/api/health` and shows it in the footer
 of the Settings modal, and `npm run dist` reads it for the setup file name and
 the installer, rewriting `desktop/package.json` when it has fallen behind. Tag a

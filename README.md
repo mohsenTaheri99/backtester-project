@@ -42,7 +42,7 @@ PC" on first run: click **More info → Run anyway**.
 
 ## Release a new version
 
-Bump `APP_VERSION` in `backend/app/config.py`, commit, then push a matching
+Bump `APP_VERSION` in `backend/app/version.py`, commit, then push a matching
 `v<version>` tag:
 
 ```bash

@@ -11,10 +11,11 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import fields
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,22 @@ app = FastAPI(
     description="Serves OHLCV candles, backtests, live candles and forward tests.",
     lifespan=lifespan,
 )
+
+
+# The desktop window is WebView2, which keeps a disk cache beside the app, and
+# the app always serves on the same loopback port. So anything cacheable stored
+# under that origin outlives the build that stored it: after an upgrade the
+# window would show the previous version's page and its previous answers - the
+# old UI, the old symbol list, the old /api/health version. Nothing we serve is
+# worth caching, because it all changes underneath the app, so every API answer
+# says no-store; the frontend mount at the bottom of this file does the same for
+# the page and keeps only Vite's content-hashed assets.
+@app.middleware("http")
+async def _no_store_api(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["cache-control"] = "no-store"
+    return response
 
 
 def _symbol_or_404(symbol_id: str) -> Symbol:
@@ -559,5 +576,23 @@ def backtest(request: BacktestRequest) -> dict:
 # ---------------------------------------------------------------------------
 # frontend - mounted last so every /api route above takes precedence
 # ---------------------------------------------------------------------------
+class _Frontend(StaticFiles):
+    """The built UI, with the cache rules Vite's output asks for.
+
+    index.html is never cached: it names the bundle for this build, and a stale
+    copy of it loads a build that is no longer installed. Everything in assets/
+    is content-hashed by Vite - the name changes whenever the bytes do - so it
+    can be kept for good.
+    """
+
+    def file_response(self, full_path, stat_result, scope, status_code: int = 200):
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        hashed = Path(full_path).parent.name == "assets"
+        response.headers["cache-control"] = (
+            "public, max-age=31536000, immutable" if hashed else "no-store"
+        )
+        return response
+
+
 if os.getenv("FRONTEND_DIR"):
-    app.mount("/", StaticFiles(directory=os.environ["FRONTEND_DIR"], html=True), name="frontend")
+    app.mount("/", _Frontend(directory=os.environ["FRONTEND_DIR"], html=True), name="frontend")

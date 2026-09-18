@@ -29,7 +29,7 @@ const buildDir = path.resolve(process.env.BACKTESTER_BUILD_DIR ?? path.join(desk
 const outDir = path.resolve(process.env.BACKTESTER_OUT_DIR ?? path.join(desktopDir, 'release'))
 
 const win = process.platform === 'win32'
-// The version lives in backend/app/config.py, because the running app has to be
+// The version lives in backend/app/version.py, because the running app has to be
 // able to report it. Everything else - the setup file name, the installer, npm's
 // metadata - follows from there, so there is only ever one place to bump.
 const version = readVersion()
@@ -39,10 +39,10 @@ const appName = 'GoldBacktester'
 const setupFile = path.join(outDir, `Gold Backtester-Setup-${version}.exe`)
 
 function readVersion() {
-  const config = readFileSync(path.join(backendDir, 'app', 'config.py'), 'utf8')
-  const match = config.match(/^APP_VERSION\s*=\s*["']([^"']+)["']/m)
+  const source = readFileSync(path.join(backendDir, 'app', 'version.py'), 'utf8')
+  const match = source.match(/^APP_VERSION\s*=\s*["']([^"']+)["']/m)
   if (!match) {
-    console.error('APP_VERSION not found in backend/app/config.py')
+    console.error('APP_VERSION not found in backend/app/version.py')
     process.exit(1)
   }
   return match[1]

@@ -1,7 +1,7 @@
 {
   "name": "gold-backtester-desktop",
   "productName": "Gold Backtester",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Builds the Gold Backtester Windows app and setup file",
   "author": "mohsen taheri",
   "private": true,

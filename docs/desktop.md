@@ -62,7 +62,7 @@ Run from `desktop/`:
    - Excludes bokeh and its dependencies (see
      [Architecture → Why no bokeh](architecture.md#why-no-bokeh)), pywebview's
      non-Windows GUI backends, and tkinter / matplotlib / IPython.
-4. `makensis installer.nsi` with `APP_VERSION` from `backend/app/config.py` -
+4. `makensis installer.nsi` with `APP_VERSION` from `backend/app/version.py` -
    the one place the version is written - producing
    `release/Gold Backtester-Setup-<version>.exe`. `desktop/package.json` is
    rewritten to match when it has fallen behind, so npm and NSIS never
@@ -73,7 +73,7 @@ Run from `desktop/`:
 `.github/workflows/release.yml` runs the same `npm run dist` on a
 `windows-latest` runner and publishes the result.
 
-1. Bump `APP_VERSION` in `backend/app/config.py` and commit it.
+1. Bump `APP_VERSION` in `backend/app/version.py` and commit it.
 2. `git tag v<version> && git push origin v<version>`.
 
 The workflow then:
@@ -130,7 +130,7 @@ installed app's.
 
 ## Releasing a new version
 
-1. Bump `APP_VERSION` in `backend/app/config.py`.
+1. Bump `APP_VERSION` in `backend/app/version.py`.
 2. `npm run dist`.
 3. Tag it: `git tag -a v<version> -m "..."` and push the tag.
 4. Send `release/Gold Backtester-Setup-<version>.exe`. Installing over an older

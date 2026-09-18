@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import socket
 import sys
 import threading
@@ -24,6 +25,10 @@ import time
 import types
 import urllib.request
 from pathlib import Path
+
+# Cheap by design: version.py imports nothing, so the window is not waiting
+# on pandas (which app.config would pull in) before it can be drawn.
+from app.version import APP_VERSION
 
 APP_NAME = "Gold Backtester"
 # A fixed port keeps the page origin stable across launches, and WebView2 keys
@@ -199,6 +204,35 @@ class Backend:
 # ---------------------------------------------------------------------------
 # window
 # ---------------------------------------------------------------------------
+def _drop_web_cache_from_older_build(storage: Path) -> None:
+    """Throw away a web cache that an earlier version of the app filled.
+
+    The app serves on a fixed port, so every build shares one origin with the
+    one before it, and WebView2 was happy to answer this build's requests with
+    the previous build's page and API replies - an upgrade that still showed the
+    old UI. Responses now say no-store, but an install upgrading from a build
+    that did not has the stale entries on disk already, so drop them once, the
+    first time a new version runs. Only the HTTP caches go; Local Storage, which
+    holds the drawings, is left alone.
+    """
+    stamp = storage / "cached-by.txt"
+    try:
+        if stamp.read_text(encoding="utf-8").strip() == APP_VERSION:
+            return
+    except OSError:
+        pass  # no stamp yet: first run of a build that writes one
+    caches = [storage / "EBWebView" / "Default" / name for name in ("Cache", "Code Cache")]
+    stale = [cache for cache in caches if cache.exists()]
+    for cache in stale:
+        shutil.rmtree(cache, ignore_errors=True)
+    try:
+        stamp.write_text(APP_VERSION, encoding="utf-8")
+    except OSError as exc:  # not worth failing a launch over
+        log(f"could not record the cache stamp: {exc}")
+    if stale:
+        log(f"cleared the web cache left by an earlier version (now {APP_VERSION})")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=APP_NAME)
     parser.add_argument("--dev", action="store_true", help="load the Vite dev server (hot reload)")
@@ -206,7 +240,7 @@ def main() -> None:
     args = parser.parse_args()
 
     _redirect_output_when_windowed()
-    log(f"{APP_NAME} starting (frozen={FROZEN}, python {sys.version.split()[0]}, {sys.platform})")
+    log(f"{APP_NAME} {APP_VERSION} starting (frozen={FROZEN}, python {sys.version.split()[0]}, {sys.platform})")
 
     # Never send the window's requests to 127.0.0.1 through a system proxy.
     # Chromium already exempts loopback by default; this keeps it that way even
@@ -256,6 +290,7 @@ def main() -> None:
 
     storage = USER_DIR / "webview"
     storage.mkdir(parents=True, exist_ok=True)
+    _drop_web_cache_from_older_build(storage)
     try:
         webview.start(
             load_app,

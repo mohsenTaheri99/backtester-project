@@ -1,6 +1,6 @@
 # Builds the Windows setup file and publishes it as a GitHub Release.
 #
-# Push a tag that matches APP_VERSION in backend/app/config.py:
+# Push a tag that matches APP_VERSION in backend/app/version.py:
 #
 #   git tag v0.3.0 && git push origin v0.3.0
 #
@@ -40,9 +40,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version=$(sed -n 's/^APP_VERSION[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' backend/app/config.py)
+          version=$(sed -n 's/^APP_VERSION[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' backend/app/version.py)
           if [ -z "$version" ]; then
-            echo "::error file=backend/app/config.py::APP_VERSION not found"
+            echo "::error file=backend/app/version.py::APP_VERSION not found"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -51,7 +51,7 @@ jobs:
           # A tag build must agree with the version the app reports about itself,
           # otherwise the setup file and the release would name different builds.
           if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "::error file=backend/app/config.py::Tag $GITHUB_REF_NAME does not match APP_VERSION $version. Bump APP_VERSION to ${GITHUB_REF_NAME#v} (or retag as v$version) and push again."
+            echo "::error file=backend/app/version.py::Tag $GITHUB_REF_NAME does not match APP_VERSION $version. Bump APP_VERSION to ${GITHUB_REF_NAME#v} (or retag as v$version) and push again."
             exit 1
           fi
 

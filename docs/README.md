@@ -25,13 +25,14 @@ backtester project/
 │   ├── installer.nsi          NSIS setup file script
 │   ├── assets/                icon.ico, icon.png
 │   ├── scripts/               build (npm run dist), dev, make-icon
-│   └── package.json           npm scripts; its version is synced from config.py
+│   └── package.json           npm scripts; its version is synced from version.py
 ├── backend/
 │   ├── desktop_app.py         app entry point: WebView2 window + backend thread
 │   ├── requirements.txt       incl. pywebview and PyInstaller
 │   ├── app/
 │   │   ├── main.py            FastAPI routes
-│   │   ├── config.py          APP_VERSION, paths, timeframes, limits
+│   │   ├── config.py          paths, timeframes, limits, symbols
+│   │   ├── version.py         APP_VERSION - the one place to bump it
 │   │   ├── settings.py        user settings + the symbol catalogue on disk
 │   │   ├── store.py           CSV loading, merging, resampling cache
 │   │   ├── providers/         market data clients (twelvedata.py)
