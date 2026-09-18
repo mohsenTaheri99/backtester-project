@@ -18,21 +18,33 @@ price-action helpers in `signals.py`.
 - **Premium / discount** — the 1h range is the last confirmed swing high and
   low; equilibrium is their midpoint. Longs only below it, shorts only above it.
 - **Sessions** — only the first 150 minutes after 08:00 London and 08:00 New
-  York. Each window uses its own timezone, so daylight-saving changes follow
-  the local market (`session_mask()` in `signals.py`).
+  York. Both openings and the window length are parameters; each window uses
+  its own timezone, so daylight-saving changes follow the local market, and a
+  window that runs past local midnight wraps into the next day
+  (`session_mask()` in `signals.py`).
 
 ### Risk and trade management
 
-- **Stop** — beyond the swept extreme plus `0.5 × ATR(14)`, at least 10 pips
-  and capped at 100 pips (gold: 1 pip = $0.10).
+- **Stop** — beyond the swept extreme plus `0.5 × ATR(14)`, capped at 100 pips
+  (gold: 1 pip = $0.10). The `min_sl_pips` floor is only there to keep the stop
+  off the entry price and defaults to 1 pip: a stop may be as tight as the
+  structure makes it, it just may not be wider than the cap.
 - **Target** — `reward_ratio × risk`, 2R by default.
 - **Break-even** — once price has moved 1R in favour, the stop moves to entry.
-- **Size** — units such that hitting the stop loses `risk_pct` (1%) of equity.
+- **Size** — units such that hitting the stop loses `risk_pct` (1%) of equity,
+  then capped at what `leverage` lets the account carry. A very tight stop asks
+  for a position the broker would refuse outright, and a refused order leaves
+  nothing in the funnel to explain the missing trade, so it is sized down to fit
+  instead.
 - **One position at a time.**
 - Risk is measured from the **expected fill** (close ± spread), so a stopped
   trade is exactly −1.00R and a target hit is exactly +2.00R.
 
-All of these are fields on the `IctParams` dataclass.
+All of these are fields on the `IctParams` dataclass, and every one of them
+except `start_trading_at` (which the range picker and forward testing set) has a
+control in the setup tab, grouped as Structure, Trigger, Filters, Risk and
+Account. Each control carries a one-line `description` explaining what the rule
+does, so the rules live next to the knob rather than only in this file.
 
 ## No lookahead
 

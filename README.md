@@ -33,7 +33,7 @@ cd frontend && npm install
 cd ../desktop && npm run dist
 ```
 
-Output: `desktop/release/Gold Backtester-Setup-0.2.0.exe`, a single file to send
+Output: `desktop/release/Gold Backtester-Setup-0.4.0.exe`, a single file to send
 to customers. It installs per user (no admin prompt), adds Start menu and
 desktop shortcuts, and appears in Windows **Apps** with an uninstaller.
 

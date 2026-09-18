@@ -175,7 +175,9 @@ download -> 400, a second download while one is running -> 409.
 ### How `/api/strategies` describes parameters
 
 `_describe()` combines the strategy's params dataclass (for defaults and types)
-with its `PARAM_UI` list (label, group, unit, min/max/step). Types are reduced to
+with its `PARAM_UI` list (label, group, unit, min/max/step, description). Every
+key of a `PARAM_UI` entry is passed through as-is, so a new one - `description`
+is rendered under the control - needs no change here. Types are reduced to
 `bool`, `int`, `float` or `select` (a dropdown over the entry's `options`), which
 is all the frontend form needs. Only fields in `PARAM_UI` get a control, but
 **every** dataclass field is accepted by `/api/backtest`.

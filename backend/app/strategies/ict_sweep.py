@@ -31,8 +31,13 @@ from backtesting import Strategy
 from ..config import BASE_TIMEFRAME, TIMEFRAMES, timeframe_delta
 from .signals import atr, fractal_swings_by_close, fractal_swings_by_extreme, session_mask
 
-LONDON = ("Europe/London", "08:00")
-NEW_YORK = ("America/New_York", "08:00")
+LONDON_TZ = "Europe/London"
+NEW_YORK_TZ = "America/New_York"
+
+# Every half hour of the day, for the session-open dropdowns. A free text field
+# would let a typo through to `session_mask`, where it becomes a ValueError in
+# the middle of a run instead of a choice the user can see.
+CLOCK_TIMES: list[str] = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
 
 
 @dataclass(frozen=True)
@@ -52,11 +57,16 @@ class IctParams:
     use_premium_discount: bool = True
     use_sessions: bool = True
     session_minutes: int = 150
+    london_open: str = "08:00"    # local London time the first window opens at
+    new_york_open: str = "08:00"  # local New York time the second window opens at
     # --- risk ---
     risk_pct: float = 1.0
     reward_ratio: float = 2.0
     max_sl_pips: float = 100.0
-    min_sl_pips: float = 10.0
+    # The floor only exists to keep a stop off the entry price itself. Gold's
+    # spread alone is a few pips, so a stop may sit as close as ~1 pip, but a
+    # structure that wants more room than `max_sl_pips` is capped, not skipped.
+    min_sl_pips: float = 1.0
     sl_buffer_atr: float = 0.5
     atr_period: int = 14
     breakeven_at_r: float = 1.0
@@ -73,10 +83,31 @@ class IctParams:
                 f"pin_timeframe '{self.pin_timeframe}' is not a known timeframe "
                 f"(have: {', '.join(TIMEFRAMES)})"
             )
+        for name in ("london_open", "new_york_open"):
+            value = getattr(self, name)
+            if not _valid_clock_time(value):
+                raise ValueError(f"{name} '{value}' is not a HH:MM time of day")
+        if self.min_sl_pips > self.max_sl_pips:
+            raise ValueError(
+                f"min_sl_pips ({self.min_sl_pips}) is above max_sl_pips "
+                f"({self.max_sl_pips}), which leaves no stop distance to trade"
+            )
 
     @property
     def session_windows(self) -> list[tuple[str, str, int]]:
-        return [(tz, start, self.session_minutes) for tz, start in (LONDON, NEW_YORK)]
+        return [
+            (LONDON_TZ, self.london_open, self.session_minutes),
+            (NEW_YORK_TZ, self.new_york_open, self.session_minutes),
+        ]
+
+
+def _valid_clock_time(value: str) -> bool:
+    """True for a "HH:MM" string `session_mask` can read."""
+    parts = str(value).split(":")
+    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+        return False
+    hour, minute = (int(part) for part in parts)
+    return 0 <= hour < 24 and 0 <= minute < 60
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +447,12 @@ class IctSweepStrategy(Strategy):
         target = fill + p.reward_ratio * distance if bias == 1 else fill - p.reward_ratio * distance
 
         units = int(round((self.equity * p.risk_pct / 100) / distance))
+        # A tight stop asks for a big position. Past what the account can
+        # margin, the broker cancels the order outright and the setup vanishes
+        # with nothing in the funnel to explain it, so cap the size here: the
+        # trade is taken at less than the intended risk rather than lost.
+        affordable = int((self.equity * p.leverage) / fill)
+        units = min(units, affordable)
         if units < 1:
             self._reject("size_below_one_unit")
             return
@@ -433,31 +470,166 @@ class IctSweepStrategy(Strategy):
         (self.buy if bias == 1 else self.sell)(size=units, sl=stop, tp=target, tag=tag)
 
 
-# Curated controls for the UI. Every dataclass field is still accepted by the
-# API; these are just the ones worth putting a knob on.
+# Every rule the strategy applies gets a knob here, so nothing that changes a
+# result is hidden in the source. `_describe()` in main.py adds the type and the
+# default from the dataclass; "description" is the one-line explanation the
+# setup tab shows under each control.
 PARAM_UI: list[dict] = [
-    {"name": "risk_pct", "label": "Risk per trade", "group": "Risk", "unit": "%", "min": 0.1, "max": 5, "step": 0.1},
-    {"name": "reward_ratio", "label": "Reward ratio", "group": "Risk", "unit": "R", "min": 0.5, "max": 10, "step": 0.5},
-    {"name": "max_sl_pips", "label": "Max stop", "group": "Risk", "unit": "pips", "min": 10, "max": 500, "step": 10},
-    {"name": "breakeven_at_r", "label": "Break-even at", "group": "Risk", "unit": "R", "min": 0, "max": 3, "step": 0.25},
-    {"name": "sl_buffer_atr", "label": "Stop buffer", "group": "Risk", "unit": "x ATR", "min": 0, "max": 3, "step": 0.1},
-    {"name": "sweep_window_min", "label": "Sweep window", "group": "Setup", "unit": "min", "min": 5, "max": 240, "step": 5},
-    {"name": "sweep_lookback", "label": "Pool lookback", "group": "Setup", "unit": "15m bars", "min": 5, "max": 200, "step": 5},
-    {"name": "h1_fractal", "label": "1h fractal", "group": "Setup", "unit": "bars", "min": 2, "max": 10, "step": 1},
-    {"name": "m15_fractal", "label": "15m fractal", "group": "Setup", "unit": "bars", "min": 1, "max": 10, "step": 1},
-    {"name": "use_sessions", "label": "London + New York only", "group": "Filters"},
-    {"name": "use_premium_discount", "label": "Premium / discount", "group": "Filters"},
-    {"name": "allow_pin", "label": "Pin bar trigger", "group": "Filters"},
+    # --- Structure: how the 1h bias and the 15m liquidity pools are found ----
     {
-        "name": "pin_timeframe",
-        "label": "Pin bar timeframe",
-        "group": "Filters",
-        "options": list(TIMEFRAMES),
+        "name": "h1_fractal", "label": "1h fractal", "group": "Structure",
+        "unit": "bars", "min": 2, "max": 10, "step": 1,
+        "description": "Bars either side of a 1h swing that must close beyond it before "
+                       "the swing counts. Higher means fewer but more meaningful swings, "
+                       "and a bias that takes longer to form.",
     },
-    {"name": "allow_engulfing", "label": "Engulfing trigger", "group": "Filters"},
-    {"name": "cash", "label": "Starting cash", "group": "Account", "unit": "$", "min": 1000, "max": 1_000_000, "step": 1000},
-    {"name": "pip_size", "label": "Pip size", "group": "Account", "unit": "$", "min": 0.00001, "max": 1, "step": 0.00001},
-    {"name": "spread_usd", "label": "Spread", "group": "Account", "unit": "$", "min": 0, "max": 2, "step": 0.05},
+    {
+        "name": "m15_fractal", "label": "15m fractal", "group": "Structure",
+        "unit": "bars", "min": 1, "max": 10, "step": 1,
+        "description": "Bars either side of a 15m high or low for it to count as a "
+                       "liquidity pool. Lower finds more pools, so more sweeps.",
+    },
+    {
+        "name": "sweep_lookback", "label": "Pool lookback", "group": "Structure",
+        "unit": "15m bars", "min": 5, "max": 200, "step": 5,
+        "description": "How far back a liquidity pool stays worth sweeping. 40 bars is "
+                       "about ten hours of 15m candles.",
+    },
+    {
+        "name": "sweep_window_min", "label": "Sweep window", "group": "Structure",
+        "unit": "min", "min": 5, "max": 240, "step": 5,
+        "description": "Minutes a sweep stays tradable. If no trigger fires inside the "
+                       "window the setup expires. Widening it is the cheapest way to get "
+                       "more trades.",
+    },
+    # --- Trigger: the entry candle ------------------------------------------
+    {
+        "name": "allow_pin", "label": "Pin bar trigger", "group": "Trigger",
+        "description": "Enter on a pin bar: a long wick into the sweep with a small body.",
+    },
+    {
+        "name": "pin_timeframe", "label": "Pin bar timeframe", "group": "Trigger",
+        "options": list(TIMEFRAMES),
+        "description": "Timeframe the pin bar is read on. The entry still lands on the 1m "
+                       "bar where that candle closes. 1d and 1w close when the market is "
+                       "shut, so most of their pins are dropped.",
+    },
+    {
+        "name": "pin_wick_ratio", "label": "Pin wick", "group": "Trigger",
+        "unit": "x body", "min": 1, "max": 10, "step": 0.1,
+        "description": "How many times the body the rejection wick must be. 2 is the "
+                       "classic pin bar; raising it demands a more violent rejection.",
+    },
+    {
+        "name": "pin_opposite_ratio", "label": "Pin opposite wick", "group": "Trigger",
+        "unit": "x wick", "min": 0, "max": 1, "step": 0.05,
+        "description": "Largest the wick on the other side may be, as a share of the "
+                       "rejection wick. 0.3 means the candle must be clearly one-sided.",
+    },
+    {
+        "name": "allow_engulfing", "label": "Engulfing trigger", "group": "Trigger",
+        "description": "Enter on a 1m candle whose body fully swallows the previous "
+                       "candle's body in the bias direction. Always read on 1m.",
+    },
+    # --- Filters: what is allowed to trade ----------------------------------
+    {
+        "name": "use_premium_discount", "label": "Premium / discount", "group": "Filters",
+        "description": "Buy only below the midpoint of the 1h range and sell only above "
+                       "it. The single heaviest filter: it rejects roughly six setups in "
+                       "ten that got this far.",
+    },
+    {
+        "name": "use_sessions", "label": "London + New York only", "group": "Filters",
+        "description": "Trade only inside the two session windows below. Off, the whole "
+                       "24h day is tradable and trade count roughly doubles.",
+    },
+    {
+        "name": "london_open", "label": "London window opens", "group": "Filters",
+        "options": list(CLOCK_TIMES),
+        "description": "Local London time the first window starts. Locked to the London "
+                       "clock, so summer time follows the market.",
+    },
+    {
+        "name": "new_york_open", "label": "New York window opens", "group": "Filters",
+        "options": list(CLOCK_TIMES),
+        "description": "Local New York time the second window starts, on the New York "
+                       "clock for the same reason.",
+    },
+    {
+        "name": "session_minutes", "label": "Window length", "group": "Filters",
+        "unit": "min", "min": 15, "max": 1440, "step": 15,
+        "description": "How long each session window stays open. 150 is the first two "
+                       "and a half hours; both windows use the same length.",
+    },
+    # --- Risk: stop, target and size ----------------------------------------
+    {
+        "name": "risk_pct", "label": "Risk per trade", "group": "Risk",
+        "unit": "%", "min": 0.1, "max": 5, "step": 0.1,
+        "description": "Share of equity risked per trade. Size is derived from it and the "
+                       "stop distance, so every trade risks the same amount of money.",
+    },
+    {
+        "name": "reward_ratio", "label": "Reward ratio", "group": "Risk",
+        "unit": "R", "min": 0.5, "max": 10, "step": 0.5,
+        "description": "Target as a multiple of the stop distance. At 2R the break-even "
+                       "win rate is about 33%, nearer 38% once spread is paid.",
+    },
+    {
+        "name": "max_sl_pips", "label": "Max stop", "group": "Risk",
+        "unit": "pips", "min": 1, "max": 500, "step": 10,
+        "description": "Hard ceiling on the stop. A structure that wants more room is "
+                       "traded at this distance instead of being skipped.",
+    },
+    {
+        "name": "min_sl_pips", "label": "Min stop", "group": "Risk",
+        "unit": "pips", "min": 0, "max": 100, "step": 0.5,
+        "description": "Floor on the stop, only there to keep it off the entry price. "
+                       "Setups tighter than this are skipped, so keep it low - 1 to 1.5 "
+                       "pips is enough on gold.",
+    },
+    {
+        "name": "sl_buffer_atr", "label": "Stop buffer", "group": "Risk",
+        "unit": "x ATR", "min": 0, "max": 3, "step": 0.1,
+        "description": "Extra room beyond the swept high or low, as a multiple of the 1m "
+                       "ATR, so ordinary noise does not take the stop out.",
+    },
+    {
+        "name": "atr_period", "label": "ATR period", "group": "Risk",
+        "unit": "1m bars", "min": 2, "max": 200, "step": 1,
+        "description": "Bars in the Wilder ATR that sizes the stop buffer.",
+    },
+    {
+        "name": "breakeven_at_r", "label": "Break-even at", "group": "Risk",
+        "unit": "R", "min": 0, "max": 3, "step": 0.25,
+        "description": "Move the stop to entry once price has travelled this many times "
+                       "the risk. 0 turns it off, which raises the win rate and the "
+                       "drawdown together.",
+    },
+    # --- Account: the broker side -------------------------------------------
+    {
+        "name": "cash", "label": "Starting cash", "group": "Account",
+        "unit": "$", "min": 1000, "max": 1_000_000, "step": 1000,
+        "description": "Balance the run starts with. Position size scales with equity, so "
+                       "this mostly rescales the P&L.",
+    },
+    {
+        "name": "leverage", "label": "Leverage", "group": "Account",
+        "unit": ":1", "min": 1, "max": 500, "step": 1,
+        "description": "Broker leverage. It caps how large a position the account can "
+                       "carry; a very tight stop is sized down to fit rather than lost.",
+    },
+    {
+        "name": "pip_size", "label": "Pip size", "group": "Account",
+        "unit": "$", "min": 0.00001, "max": 1, "step": 0.00001,
+        "description": "Price move worth one pip. $0.10 for gold; change it for any other "
+                       "instrument, since both stop limits are counted in pips.",
+    },
+    {
+        "name": "spread_usd", "label": "Spread", "group": "Account",
+        "unit": "$", "min": 0, "max": 2, "step": 0.05,
+        "description": "Broker spread paid on entry and exit. Risk is measured from the "
+                       "filled price, so 1R stays 1R once it is charged.",
+    },
 ]
 
 

@@ -114,46 +114,59 @@ function Control({
   value: ParamValue
   onChange: (value: ParamValue) => void
 }) {
+  const hint = control.description ? (
+    <span className="control-hint">{control.description}</span>
+  ) : null
+
   if (control.type === 'select') {
     return (
-      <label className="control">
-        <span className="control-label">{control.label}</span>
-        <select className="select" value={String(value)} onChange={(e) => onChange(e.target.value)}>
-          {(control.options ?? []).map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="control-row">
+        <label className="control">
+          <span className="control-label">{control.label}</span>
+          <select className="select" value={String(value)} onChange={(e) => onChange(e.target.value)}>
+            {(control.options ?? []).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        {hint}
+      </div>
     )
   }
   if (control.type === 'bool') {
     return (
-      <label className="control checkbox">
-        <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
-        <span>{control.label}</span>
-      </label>
+      <div className="control-row">
+        <label className="control checkbox">
+          <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
+          <span>{control.label}</span>
+        </label>
+        {hint}
+      </div>
     )
   }
   return (
-    <label className="control">
-      <span className="control-label">
-        {control.label}
-        {control.unit ? <em> {control.unit}</em> : null}
-      </span>
-      <input
-        type="number"
-        value={String(value)}
-        min={control.min}
-        max={control.max}
-        step={control.step ?? (control.type === 'int' ? 1 : 0.1)}
-        onChange={(e) => {
-          const parsed = control.type === 'int' ? parseInt(e.target.value, 10) : parseFloat(e.target.value)
-          if (!Number.isNaN(parsed)) onChange(parsed)
-        }}
-      />
-    </label>
+    <div className="control-row">
+      <label className="control">
+        <span className="control-label">
+          {control.label}
+          {control.unit ? <em> {control.unit}</em> : null}
+        </span>
+        <input
+          type="number"
+          value={String(value)}
+          min={control.min}
+          max={control.max}
+          step={control.step ?? (control.type === 'int' ? 1 : 0.1)}
+          onChange={(e) => {
+            const parsed = control.type === 'int' ? parseInt(e.target.value, 10) : parseFloat(e.target.value)
+            if (!Number.isNaN(parsed)) onChange(parsed)
+          }}
+        />
+      </label>
+      {hint}
+    </div>
   )
 }
 

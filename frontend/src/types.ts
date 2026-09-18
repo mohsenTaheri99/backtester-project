@@ -53,6 +53,7 @@ export interface ParamControl {
   max?: number
   step?: number
   options?: string[] // choices for a 'select' control
+  description?: string // one line explaining what the rule does
 }
 
 export interface StrategyInfo {
