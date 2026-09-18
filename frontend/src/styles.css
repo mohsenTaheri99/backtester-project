@@ -721,9 +721,25 @@ body {
   color: var(--dim);
 }
 
+.funnel li > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Share of the bars reaching a gate that it stopped - the number that says
+   which filter is actually expensive, rather than which one runs first. */
+.funnel-share {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  cursor: help;
+}
+
 .funnel b {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  text-align: right;
 }
 
 /* ---- trades table ---- */

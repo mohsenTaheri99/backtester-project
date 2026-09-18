@@ -294,26 +294,40 @@ def pin_flags(df: pd.DataFrame, p: IctParams) -> tuple[np.ndarray, np.ndarray]:
 
 
 def pin_triggers(pin: pd.DataFrame, m1_index: pd.DatetimeIndex, p: IctParams) -> pd.DataFrame:
-    """Pin bars of `pin_timeframe`, stamped on the 1m bar that closes with them.
+    """Pin bars of `pin_timeframe`, stamped on the first 1m bar that can trade them.
 
-    A candle covering [T, T + tf) is only complete at T + tf, so the entry lands
-    on the 1m bar closing at that instant - the bar opening one minute earlier.
-    When the data has a gap there and no such 1m bar exists, the trigger is
-    dropped rather than pulled backwards, which would be reading the future.
+    A candle covering [T, T + tf) is only complete at T + tf, so the entry wants
+    the 1m bar closing at that instant - the bar opening one minute earlier.
+    That bar is missing whenever the candle completes while the market is shut,
+    which is every Friday for a daily candle and every week for a weekly one, so
+    the trigger moves *forward* to the first 1m bar closing at or after the
+    candle did. Forward is safe: the candle was already complete. Backward would
+    be reading the future, and is never done. A gap longer than one candle of
+    `pin_timeframe` is stale rather than late, and is dropped.
     """
     bullish, bearish = pin_flags(pin, p)
     fired = bullish | bearish
-    if not fired.any():
-        return pd.DataFrame({"pin_bull": False, "pin_bear": False}, index=m1_index)
+    bull_at = np.zeros(len(m1_index), dtype=bool)
+    bear_at = np.zeros(len(m1_index), dtype=bool)
+    if not fired.any() or not len(m1_index):
+        return pd.DataFrame({"pin_bull": bull_at, "pin_bear": bear_at}, index=m1_index)
 
-    closes = pin.index[fired] + timeframe_delta(p.pin_timeframe)
+    span = timeframe_delta(p.pin_timeframe)
+    closes = pin.index[fired] + span
     entries = closes - timeframe_delta(BASE_TIMEFRAME)
 
-    at = pd.DataFrame(
-        {"pin_bull": bullish[fired], "pin_bear": bearish[fired]}, index=entries
-    )
-    # Exact match only: an entry time missing from the 1m grid is a data gap.
-    return at.reindex(m1_index, fill_value=False).astype(bool)
+    where = m1_index.searchsorted(entries, side="left")
+    landed = where < len(m1_index)
+    # `searchsorted` lands on the exact bar when it exists and on the next one
+    # when it does not, so this only ever moves a trigger later, never earlier.
+    late = np.zeros(len(entries), dtype=bool)
+    late[landed] = (m1_index[where[landed]] - entries[landed]) <= span
+    keep = landed & late
+
+    # Two candles can fold onto the same 1m bar across a gap, so OR them.
+    np.logical_or.at(bull_at, where[keep], bullish[fired][keep])
+    np.logical_or.at(bear_at, where[keep], bearish[fired][keep])
+    return pd.DataFrame({"pin_bull": bull_at, "pin_bear": bear_at}, index=m1_index)
 
 
 def engulfing_at(o: float, c: float, po: float, pc: float, direction: int) -> bool:
@@ -328,6 +342,24 @@ def engulfing_at(o: float, c: float, po: float, pc: float, direction: int) -> bo
 # the strategy itself (runs bar by bar on 1m)
 # ---------------------------------------------------------------------------
 class IctSweepStrategy(Strategy):
+    # Every gate `next()` applies, in the order it applies them. A bar is counted
+    # against the first one that stops it, so the counts partition `evaluated`
+    # exactly and the UI can show what reached each stage instead of guessing
+    # from raw sizes - where the first gate always looks like the worst one.
+    REJECTION_ORDER: tuple[str, ...] = (
+        "position_open",
+        "no_bias",
+        "no_active_sweep",
+        "outside_session",
+        "no_range",
+        "not_in_discount",
+        "not_in_premium",
+        "no_trigger",
+        "no_sweep_extreme",
+        "stop_too_tight",
+        "size_below_one_unit",
+    )
+
     params: IctParams = IctParams()
     context: pd.DataFrame | None = None
     spread_rel: float = 0.0  # broker spread as a fraction of price, set by the runner
@@ -353,6 +385,7 @@ class IctSweepStrategy(Strategy):
         self._min_sl = p.min_sl_pips * p.pip_size
         self._warmup = max(p.atr_period, 2)
         self.rejections: dict[str, int] = {}
+        self.evaluated = 0  # bars that actually reached the filter chain
 
     def _reject(self, reason: str) -> None:
         self.rejections[reason] = self.rejections.get(reason, 0) + 1
@@ -368,9 +401,11 @@ class IctSweepStrategy(Strategy):
 
         p = self.params
         price = float(self.data.Close[-1])
+        self.evaluated += 1
 
         # --- manage the open trade first ------------------------------------
         if self.position:
+            self._reject("position_open")
             for trade in self.trades:
                 risk = abs(trade.entry_price - trade.sl) if trade.sl else 0.0
                 if not risk or p.breakeven_at_r <= 0:
@@ -388,6 +423,7 @@ class IctSweepStrategy(Strategy):
         # --- filters ---------------------------------------------------------
         bias = int(self._bias[i])
         if bias == 0:
+            self._reject("no_bias")
             return
         if self._sweep_dir[i] != bias:
             self._reject("no_active_sweep")
@@ -510,9 +546,10 @@ PARAM_UI: list[dict] = [
     {
         "name": "pin_timeframe", "label": "Pin bar timeframe", "group": "Trigger",
         "options": list(TIMEFRAMES),
-        "description": "Timeframe the pin bar is read on. The entry still lands on the 1m "
-                       "bar where that candle closes. 1d and 1w close when the market is "
-                       "shut, so most of their pins are dropped.",
+        "description": "Timeframe the pin bar is read on. The entry lands on the first 1m "
+                       "bar closing at or after that candle did, so a candle completing "
+                       "while the market is shut trades at the next open - unless more "
+                       "time passed than the candle itself covers, which is stale.",
     },
     {
         "name": "pin_wick_ratio", "label": "Pin wick", "group": "Trigger",

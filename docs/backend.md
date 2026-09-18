@@ -199,11 +199,14 @@ The cache is in-process, so it resets when the app restarts.
 2. **Frames** - fetches the timeframes the strategy declares
    (`info.timeframes`: `trigger`, `liquidity`, `bias`) from the store.
 3. **Range** - with `range_from` / `range_to` the run is trimmed to that window
-   plus **warm-up**: roughly a day of extra bars before the first tradable one,
-   so the 1h bias and 15m sweeps entering the window are as complete as any
-   other bar's. Warm-up is counted in bars rather than wall-clock, because a
-   window opening after a weekend would otherwise take its warm-up from a closed
-   market and get none at all.
+   plus **warm-up**: enough extra bars for four 1h swings to confirm (88 hourly
+   bars at the default 5-bar fractal) before the first tradable one, so the 1h
+   bias and 15m sweeps entering the window are as complete as any other bar's.
+   One swing's worth is not enough - a bias needs a confirmed high, a confirmed
+   low and a close beyond one of them - and sizing it that way used to leave the
+   opening hours of every ranged run with no bias at all. Warm-up is counted in
+   bars rather than wall-clock, because a window opening after a weekend would
+   otherwise take its warm-up from a closed market and get none at all.
 4. **Context** - `build_context(m1, m15, h1, params)` precomputes every
    higher-timeframe fact on the 1m grid (see [Strategy](strategy.md)).
 5. **Run** - creates a per-run subclass of the strategy carrying `params`,
@@ -222,7 +225,10 @@ The cache is in-process, so it resets when the app restarts.
      (`take_profit`, `stop_loss`, `break_even`, `closed_win`, `closed_loss`);
    - `equity` - the curve sampled down to about 1,500 points (last point kept);
    - `rejections` - the strategy's funnel counters, which the UI also uses to
-     explain a run that found nothing;
+     explain a run that found nothing, with `rejectionOrder` (the gates in the
+     order they are applied) and `barsEvaluated` (bars that reached the chain at
+     all) so the UI can show what survived each gate rather than sorting raw
+     counts, where the first gate always wins;
    - `params`, `elapsedMs`.
 
 `_clean()` makes every value JSON-safe: numpy scalars become Python numbers,

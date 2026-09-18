@@ -11,7 +11,7 @@ price-action helpers in `signals.py`.
 |---|---|---|---|
 | Direction | 1h | Fractal swings, 5 bars either side, compared by **close**. A close beyond the last confirmed swing high/low is a break of structure and flips the bias. | `htf_context()` |
 | Liquidity | 15m | A pool is a fractal high/low (2 bars either side, by wick) from the last 40 bars. A sweep is a wick through the pool with the body **closing back inside**. It opens a 30-minute window. A bar that sweeps both sides is ignored. | `m15_sweeps()` |
-| Trigger | 1m | Pin bar (signal wick ≥ 2× body, opposite wick ≤ 0.3× signal wick) or engulfing candle, in the bias direction. Entry on that candle's close. | `trigger_at()` |
+| Trigger | 1m | Pin bar (signal wick ≥ 2× body, opposite wick ≤ 0.3× signal wick) or engulfing candle, in the bias direction. Entry on that candle's close. The pin may be read on a higher timeframe; it then enters on the first 1m bar closing at or after that candle did, so one completing while the market is shut trades at the next open rather than being dropped. A gap longer than the candle itself is stale and is dropped. | `pin_triggers()`, `engulfing_at()` |
 
 ### Filters
 
@@ -67,8 +67,8 @@ it touches the 1m grid.
 ## Bar-by-bar loop (`IctSweepStrategy.next`)
 
 ```
-open position?  → maybe move stop to break-even; stop
-bias == 0?      → stop
+open position?  → move stop to break-even; reject "position_open"
+bias == 0?                        → reject "no_bias"
 no live sweep in bias direction   → reject "no_active_sweep"
 outside session                   → reject "outside_session"
 no 1h range yet                   → reject "no_range"
@@ -81,9 +81,17 @@ otherwise                         → buy/sell with sl, tp and a tag
 ```
 
 The rejection counters are returned as `rejections` and shown in the Results
-tab as a funnel. Each 1m bar is counted once, at the first filter that stops it -
-which is also what lets the UI explain a run that found nothing by naming the
-filter that rejected the most bars.
+tab as a funnel. Each 1m bar is counted once, at the first gate that stops it,
+and the two that used to return silently - an open position and a bias that has
+not formed - now count too, so the totals partition `barsEvaluated` exactly:
+`barsEvaluated - sum(rejections) == trades`.
+
+`REJECTION_ORDER` on the strategy class travels with the result as
+`rejectionOrder`, which is what lets the UI show what *reached* each gate. Sorted
+by raw count instead, the answer is always the first gate in the chain: it sees
+every bar, so it rejects the most of them however cheap it is. The gate that
+actually costs setups is the one throwing away the largest share of what reaches
+it, and only the running total shows that.
 
 A forward test runs this same loop, with `start_trading_at` set to the moment the
 session began: earlier bars build the bias and the sweeps, but no trade may open

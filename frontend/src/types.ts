@@ -140,6 +140,8 @@ export interface BacktestResult {
   trades: Trade[]
   equity: EquityPoint[]
   rejections: Record<string, number>
+  rejectionOrder: string[] // the gates in the order the strategy applies them
+  barsEvaluated: number // bars that reached the filter chain at all
   elapsedMs: number
   cached: boolean
 }

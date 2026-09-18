@@ -39,6 +39,8 @@ interface Props {
 }
 
 const REJECTION_LABELS: Record<string, string> = {
+  position_open: 'a trade was already open',
+  no_bias: 'no 1h bias yet',
   no_active_sweep: 'no live 15m sweep',
   outside_session: 'outside London / New York',
   not_in_discount: 'not in discount',
@@ -56,6 +58,46 @@ const rejectionLabel = (reason: string, pinTimeframe: string) =>
     ? `no ${pinTimeframe} pin or 1m engulfing`
     : REJECTION_LABELS[reason] ?? reason
 
+interface FunnelStage {
+  reason: string
+  rejected: number
+  reached: number
+  /** Share of the bars that got this far and were stopped here, 0-1. */
+  share: number
+}
+
+/**
+ * The gates in the order the strategy applies them, each with how many bars
+ * actually reached it.
+ *
+ * Sorting by raw count instead is what the panel used to do, and it always
+ * named the first gate in the chain: it sees every bar, so it rejects the most
+ * of them however cheap it is. What costs setups is the gate that throws away
+ * the largest *share* of what reaches it, which needs the running total.
+ */
+function funnelStages(result: BacktestResult): FunnelStage[] {
+  const order = result.rejectionOrder?.length
+    ? result.rejectionOrder
+    : Object.keys(result.rejections)
+  let reached = result.barsEvaluated || 0
+  const stages: FunnelStage[] = []
+  for (const reason of order) {
+    const rejected = result.rejections[reason] ?? 0
+    if (rejected > 0 || reached > 0) {
+      stages.push({ reason, rejected, reached, share: reached > 0 ? rejected / reached : 0 })
+    }
+    reached -= rejected
+  }
+  return stages.filter((stage) => stage.rejected > 0)
+}
+
+/** The gate that threw away the largest share of what reached it. */
+const tightestStage = (stages: FunnelStage[]): FunnelStage | null =>
+  stages.reduce<FunnelStage | null>(
+    (worst, stage) => (worst === null || stage.share > worst.share ? stage : worst),
+    null,
+  )
+
 /** Trading days a run covered, weekends already dropped from the data. */
 const testedDays = (result: BacktestResult) =>
   Math.max(1, Math.round((result.range.bars - result.range.warmupBars) / 1440))
@@ -67,17 +109,17 @@ const testedDays = (result: BacktestResult) =>
  */
 function NoTrades({ result, pinTimeframe }: { result: BacktestResult; pinTimeframe: string }) {
   const days = testedDays(result)
-  const ranked = Object.entries(result.rejections).sort((a, b) => b[1] - a[1])
-  const [reason, count] = ranked[0] ?? ['', 0]
+  const worst = tightestStage(funnelStages(result))
 
   return (
     <div className="no-trades">
       <b>No setups matched.</b>
-      {count > 0 && (
+      {worst && (
         <p className="dim small">
-          The filter that rejected most bars was{' '}
-          <b>{rejectionLabel(reason, pinTimeframe)}</b> — {count.toLocaleString()} of{' '}
-          {(result.range.bars - result.range.warmupBars).toLocaleString()} bars.
+          The tightest filter was <b>{rejectionLabel(worst.reason, pinTimeframe)}</b> — it
+          stopped {worst.rejected.toLocaleString()} of the{' '}
+          {worst.reached.toLocaleString()} bars that reached it (
+          {Math.round(worst.share * 100)}%).
         </p>
       )}
       {days < 30 ? (
@@ -323,14 +365,18 @@ export default function BacktestPanel({
 
               <h3>Where setups were rejected</h3>
               <ul className="funnel">
-                {Object.entries(result.rejections)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([reason, count]) => (
-                    <li key={reason}>
-                      <span>{rejectionLabel(reason, resultPinTimeframe)}</span>
-                      <b>{count.toLocaleString()}</b>
-                    </li>
-                  ))}
+                {funnelStages(result).map((stage) => (
+                  <li key={stage.reason}>
+                    <span>{rejectionLabel(stage.reason, resultPinTimeframe)}</span>
+                    <span
+                      className="funnel-share"
+                      title={`${stage.rejected.toLocaleString()} of the ${stage.reached.toLocaleString()} bars that got this far`}
+                    >
+                      {Math.round(stage.share * 100)}%
+                    </span>
+                    <b>{stage.rejected.toLocaleString()}</b>
+                  </li>
+                ))}
               </ul>
               <p className="dim small">
                 Counted per 1m bar, in filter order — a bar rejected early is not counted again later.
