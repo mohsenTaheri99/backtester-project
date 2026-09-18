@@ -82,7 +82,10 @@ def session_mask(index: pd.DatetimeIndex, windows: list[tuple[str, str, int]]) -
     for tz, start, minutes in windows:
         local = index.tz_convert(tz)
         start_h, start_m = (int(part) for part in start.split(":"))
-        minute_of_day = local.hour * 60 + local.minute
+        minute_of_day = np.asarray(local.hour * 60 + local.minute)
         begin = start_h * 60 + start_m
-        inside |= (minute_of_day >= begin) & (minute_of_day < begin + minutes)
+        # A window may run past local midnight, so measure how far each bar is
+        # into it rather than comparing against an end that overflows the day.
+        into = (minute_of_day - begin) % (24 * 60)
+        inside |= into < min(minutes, 24 * 60)
     return inside

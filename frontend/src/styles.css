@@ -567,12 +567,32 @@ body {
   margin-bottom: 4px;
 }
 
+/* A control and the line of prose under it read as one block, so the rules sit
+   next to their explanation instead of in a manual somewhere else. */
+.control-row {
+  padding: 5px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.control-row:last-child {
+  border-bottom: 0;
+}
+
 .control {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 4px 0;
+}
+
+.control-hint {
+  display: block;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+  padding-bottom: 3px;
+  max-width: 44ch;
 }
 
 .control-label em {
@@ -701,9 +721,25 @@ body {
   color: var(--dim);
 }
 
+.funnel li > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Share of the bars reaching a gate that it stopped - the number that says
+   which filter is actually expensive, rather than which one runs first. */
+.funnel-share {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  cursor: help;
+}
+
 .funnel b {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  text-align: right;
 }
 
 /* ---- trades table ---- */

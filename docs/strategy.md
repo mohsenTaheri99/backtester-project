@@ -11,28 +11,40 @@ price-action helpers in `signals.py`.
 |---|---|---|---|
 | Direction | 1h | Fractal swings, 5 bars either side, compared by **close**. A close beyond the last confirmed swing high/low is a break of structure and flips the bias. | `htf_context()` |
 | Liquidity | 15m | A pool is a fractal high/low (2 bars either side, by wick) from the last 40 bars. A sweep is a wick through the pool with the body **closing back inside**. It opens a 30-minute window. A bar that sweeps both sides is ignored. | `m15_sweeps()` |
-| Trigger | 1m | Pin bar (signal wick ≥ 2× body, opposite wick ≤ 0.3× signal wick) or engulfing candle, in the bias direction. Entry on that candle's close. | `trigger_at()` |
+| Trigger | 1m | Pin bar (signal wick ≥ 2× body, opposite wick ≤ 0.3× signal wick) or engulfing candle, in the bias direction. Entry on that candle's close. The pin may be read on a higher timeframe; it then enters on the first 1m bar closing at or after that candle did, so one completing while the market is shut trades at the next open rather than being dropped. A gap longer than the candle itself is stale and is dropped. | `pin_triggers()`, `engulfing_at()` |
 
 ### Filters
 
 - **Premium / discount** — the 1h range is the last confirmed swing high and
   low; equilibrium is their midpoint. Longs only below it, shorts only above it.
 - **Sessions** — only the first 150 minutes after 08:00 London and 08:00 New
-  York. Each window uses its own timezone, so daylight-saving changes follow
-  the local market (`session_mask()` in `signals.py`).
+  York. Both openings and the window length are parameters; each window uses
+  its own timezone, so daylight-saving changes follow the local market, and a
+  window that runs past local midnight wraps into the next day
+  (`session_mask()` in `signals.py`).
 
 ### Risk and trade management
 
-- **Stop** — beyond the swept extreme plus `0.5 × ATR(14)`, at least 10 pips
-  and capped at 100 pips (gold: 1 pip = $0.10).
+- **Stop** — beyond the swept extreme plus `0.5 × ATR(14)`, capped at 100 pips
+  (gold: 1 pip = $0.10). The `min_sl_pips` floor is only there to keep the stop
+  off the entry price and defaults to 1 pip: a stop may be as tight as the
+  structure makes it, it just may not be wider than the cap.
 - **Target** — `reward_ratio × risk`, 2R by default.
 - **Break-even** — once price has moved 1R in favour, the stop moves to entry.
-- **Size** — units such that hitting the stop loses `risk_pct` (1%) of equity.
+- **Size** — units such that hitting the stop loses `risk_pct` (1%) of equity,
+  then capped at what `leverage` lets the account carry. A very tight stop asks
+  for a position the broker would refuse outright, and a refused order leaves
+  nothing in the funnel to explain the missing trade, so it is sized down to fit
+  instead.
 - **One position at a time.**
 - Risk is measured from the **expected fill** (close ± spread), so a stopped
   trade is exactly −1.00R and a target hit is exactly +2.00R.
 
-All of these are fields on the `IctParams` dataclass.
+All of these are fields on the `IctParams` dataclass, and every one of them
+except `start_trading_at` (which the range picker and forward testing set) has a
+control in the setup tab, grouped as Structure, Trigger, Filters, Risk and
+Account. Each control carries a one-line `description` explaining what the rule
+does, so the rules live next to the knob rather than only in this file.
 
 ## No lookahead
 
@@ -55,8 +67,8 @@ it touches the 1m grid.
 ## Bar-by-bar loop (`IctSweepStrategy.next`)
 
 ```
-open position?  → maybe move stop to break-even; stop
-bias == 0?      → stop
+open position?  → move stop to break-even; reject "position_open"
+bias == 0?                        → reject "no_bias"
 no live sweep in bias direction   → reject "no_active_sweep"
 outside session                   → reject "outside_session"
 no 1h range yet                   → reject "no_range"
@@ -69,9 +81,17 @@ otherwise                         → buy/sell with sl, tp and a tag
 ```
 
 The rejection counters are returned as `rejections` and shown in the Results
-tab as a funnel. Each 1m bar is counted once, at the first filter that stops it -
-which is also what lets the UI explain a run that found nothing by naming the
-filter that rejected the most bars.
+tab as a funnel. Each 1m bar is counted once, at the first gate that stops it,
+and the two that used to return silently - an open position and a bias that has
+not formed - now count too, so the totals partition `barsEvaluated` exactly:
+`barsEvaluated - sum(rejections) == trades`.
+
+`REJECTION_ORDER` on the strategy class travels with the result as
+`rejectionOrder`, which is what lets the UI show what *reached* each gate. Sorted
+by raw count instead, the answer is always the first gate in the chain: it sees
+every bar, so it rejects the most of them however cheap it is. The gate that
+actually costs setups is the one throwing away the largest share of what reaches
+it, and only the running total shows that.
 
 A forward test runs this same loop, with `start_trading_at` set to the moment the
 session began: earlier bars build the bias and the sweeps, but no trade may open

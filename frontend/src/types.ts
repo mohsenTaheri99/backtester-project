@@ -53,6 +53,7 @@ export interface ParamControl {
   max?: number
   step?: number
   options?: string[] // choices for a 'select' control
+  description?: string // one line explaining what the rule does
 }
 
 export interface StrategyInfo {
@@ -139,6 +140,8 @@ export interface BacktestResult {
   trades: Trade[]
   equity: EquityPoint[]
   rejections: Record<string, number>
+  rejectionOrder: string[] // the gates in the order the strategy applies them
+  barsEvaluated: number // bars that reached the filter chain at all
   elapsedMs: number
   cached: boolean
 }

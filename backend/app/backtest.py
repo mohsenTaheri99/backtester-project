@@ -179,17 +179,26 @@ def _equity_payload(curve: pd.DataFrame) -> list[dict[str, Any]]:
     ]
 
 
+# Swings the 1h bias needs before it can exist: one confirmed high, one
+# confirmed low, and a close beyond one of them. Four leaves room for the
+# alternation to be untidy, which it usually is.
+_SWINGS_FOR_BIAS = 4
+
+
 def _warmup_bars(params) -> int:
     """1m bars of context to keep before the first bar that may be traded.
 
-    The 1h bias needs `h1_fractal` bars either side of a swing plus room for a
-    break of structure, and a 15m pool stays relevant for `sweep_lookback` bars.
-    Whichever reaches back further wins, doubled for headroom.
+    A 1h swing takes `2 * h1_fractal + 1` bars to confirm, and a bias needs
+    several of them - not one. Sizing this on a single swing left the opening
+    hours of every ranged run with `bias == 0` and therefore untradable; at a
+    default 5-bar fractal the old figure was 24 hourly bars, barely two swings.
+    A 15m pool stays relevant for `sweep_lookback` bars. Whichever reaches back
+    further wins, doubled for headroom.
 
     Counted in bars rather than wall-clock: a window that opens after a weekend
     would otherwise take its warm-up from a closed market and get none at all.
     """
-    bias = 60 * (2 * getattr(params, "h1_fractal", 5) + 1)
+    bias = 60 * (2 * getattr(params, "h1_fractal", 5) + 1) * _SWINGS_FOR_BIAS
     sweeps = 15 * getattr(params, "sweep_lookback", 40)
     return max(bias, sweeps, 12 * 60) * 2
 
@@ -287,5 +296,10 @@ def run_backtest(
         "trades": _trades_payload(trades, params.pip_size),
         "equity": _equity_payload(equity),
         "rejections": getattr(strategy_instance, "rejections", {}),
+        # The order the gates are applied in, and how many bars reached them at
+        # all. Without these the UI can only sort the counts by size, and the
+        # first gate in the chain always wins that contest whatever it costs.
+        "rejectionOrder": list(getattr(info.strategy, "REJECTION_ORDER", ())),
+        "barsEvaluated": int(getattr(strategy_instance, "evaluated", 0)),
         "elapsedMs": round((time.perf_counter() - started) * 1000, 1),
     }
