@@ -20,6 +20,7 @@ export interface SymbolInfo {
   id: string
   name: string
   exchange: string
+  mic: string // the listing the candles come from; empty for an unlisted pair
   source: string
   provider: string
   imported: boolean
@@ -216,7 +217,19 @@ export interface ProviderSymbol {
   symbol: string
   name: string
   exchange: string
+  mic: string      // Market Identifier Code: which listing of this ticker
+  currency: string
+  country: string
   type: string
+  plan: string     // cheapest provider plan that may download it
+  // Whether this account's plan reaches it. null when either plan name is one
+  // the backend does not rank, where a guess would be worse than silence.
+  available: boolean | null
+}
+
+export interface ProviderSearch {
+  plan: string     // the account's own plan, for explaining a blocked row
+  results: ProviderSymbol[]
 }
 
 export interface LiveStatus {

@@ -5,7 +5,7 @@ import type {
   ForwardState,
   LiveStatus,
   ParamValue,
-  ProviderSymbol,
+  ProviderSearch,
   ProviderUsage,
   RangePlan,
   SettingsSchema,
@@ -76,15 +76,16 @@ export const saveSettings = (values: Record<string, ParamValue>) =>
 // --- data provider ----------------------------------------------------------
 export const fetchProviderUsage = () => get<ProviderUsage>('/provider/usage')
 
-export const searchProvider = (q: string) => get<ProviderSymbol[]>('/provider/search', { q })
+export const searchProvider = (q: string) => get<ProviderSearch>('/provider/search', { q })
 
 export const importSymbol = (
   symbol: string,
   name: string,
   exchange: string,
+  mic: string,
   type: string,
   days: number,
-) => send<DataJob>('/symbols', 'POST', { symbol, name, exchange, type, days })
+) => send<DataJob>('/symbols', 'POST', { symbol, name, exchange, mic, type, days })
 
 export const refreshSymbol = (id: string) =>
   send<DataJob>(`/symbols/${encodeURIComponent(id)}/refresh`, 'POST')

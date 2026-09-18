@@ -35,6 +35,7 @@ interface Props {
   trades?: Trade[]
   selectedTrade?: Trade | null
   showTrades?: boolean
+  /** Timeframe of the candles in hand - not the one just clicked; see App. */
   timeframe: string
   /** Bar time to scroll into view, e.g. the trade selected in the results table. */
   focusTime?: number | null

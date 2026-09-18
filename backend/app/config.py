@@ -56,6 +56,12 @@ class Symbol:
     exchange: str
     source: str        # ticker at the provider (Yahoo for the bundled sample)
     csv: str           # file name inside DATA_DIR, or USER_DATA_DIR when imported
+    # Market Identifier Code of the listing the candles come from. A ticker on
+    # its own is ambiguous, and the provider answers an ambiguous one with its
+    # own default listing rather than an error, so this travels with every
+    # request for this symbol's candles. Empty for the pairs (XAU/USD, BTC/USD)
+    # that are not listed anywhere.
+    mic: str = ""
     price_precision: int = 2
     provider: str = ""  # "twelvedata" for imported symbols; "" cannot go live
     imported: bool = False  # user-added: candles live in USER_DATA_DIR and are ours to write
@@ -75,6 +81,7 @@ class Symbol:
             "name": self.name,
             "exchange": self.exchange,
             "source": self.source,
+            "mic": self.mic,
             "csv": self.csv,
             "price_precision": self.price_precision,
             "provider": self.provider,

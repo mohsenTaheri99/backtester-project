@@ -27,6 +27,36 @@ Data by adding a client under `backend/app/providers/`.
 On load (`store.py`) rows are sorted by time and duplicate timestamps are
 dropped, keeping the last one.
 
+A symbol's id comes from its provider ticker - `XAU/USD` becomes `XAUUSD` - and
+the CSV is named after it. A ticker is only unique per listing, though: a search
+for *gold* returns a dozen instruments all called `GOLD`, so when a second one of
+those is imported the exchange is appended (`GOLD-NYSE`). Importing the same
+listing again keeps its id and updates it in place.
+
+Which listing is settled at import and stored on the symbol as its MIC, and every
+later request for its candles - a range download, the live poller - carries that
+MIC. Asked for a bare ticker the provider does not answer "which one?": it picks
+its own default listing, so `GOLD` imported from Stuttgart came back as candles
+for Barrick Gold on the NYSE, US trading hours and all, with nothing to say
+anything was wrong. A listing the plan does not cover now fails with the
+provider's own message instead.
+
+## Picking something worth backtesting
+
+The provider matches on letters, not on usefulness. "BTC" answers with nine
+thinly traded stocks and ETFs before it reaches BTC/USD, and the first row - a
+$30 ETF listed on one exchange - is the worst instrument in the list: a fifth of
+its minutes hold a single price and every night is an 17-hour gap. So the data
+window sorts continuous instruments first, tags them `24h`, shows each row's
+instrument type, and offers the handful this app is built around - gold, silver,
+the major pairs - as one-click chips.
+
+Search also asks for `show_plan`, so every row carries the cheapest plan that may
+download it, compared against the account's own plan (cached per key from
+`api_usage`). A listing out of reach is tagged and its button disabled, rather
+than costing a download that ends in an upgrade notice. When either plan name is
+one the backend does not rank, no claim is made either way.
+
 Beside the candles, `settings.json` holds the catalogue of imported symbols and,
 per symbol, the spans that have been fetched - so symbols and their coverage
 survive restarts and app upgrades. A symbol whose CSV has gone missing is

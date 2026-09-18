@@ -19,6 +19,7 @@ import {
   stopForward,
 } from './api'
 import type { ToolId } from './lib/drawings/types'
+import { useDataJob } from './lib/useDataJob'
 import { useDrawings } from './lib/drawings/useDrawings'
 import { TIMEFRAME_SECONDS, tradeMarkers } from './lib/markers'
 import type {
@@ -316,6 +317,16 @@ export default function App() {
     [],
   )
 
+  // A download started in the data modal keeps running after it is closed, and
+  // the symbol it imports has to reach the chart's list without a restart. The
+  // modal watches the job while it is open; this takes over when it is not.
+  const handleJobFinished = useCallback(() => {
+    fetchSymbols()
+      .then((list) => handleSymbolsChanged(list))
+      .catch(() => undefined)
+  }, [handleSymbolsChanged])
+  useDataJob(!dataOpen, handleJobFinished)
+
   const handleStartForward = useCallback(() => {
     if (!strategy) return
     setForwardStarting(true)
@@ -363,11 +374,27 @@ export default function App() {
     [candles, symbol, timeframe],
   )
 
+  // The timeframe the candles on screen actually belong to. `timeframe` flips
+  // the moment the button is clicked, while the bars arrive a fetch later, so
+  // anything measured in bar widths - trade zones, markers, the drawing layer -
+  // must use this one or it spends that fetch sized for bars nobody can see.
+  const loadedTimeframe = candlesKey.split(':')[1] || timeframe
+
+  // A result belongs to the symbol it ran on. Switching charts must not leave
+  // gold's trades drawn over bitcoin's candles, in the markers, the trade list,
+  // the equity curve or the status bar. The run itself is kept rather than
+  // thrown away, so switching back brings it into view again.
+  const shown = result?.symbol === symbol ? result : null
+  const trade = shown ? selectedTrade : null
+
   const markers = useMemo(
     () =>
-      result && showTrades ? tradeMarkers(result.trades, timeframe, selectedTrade?.id ?? null) : [],
-    [result, selectedTrade, showTrades, timeframe],
+      shown && showTrades ? tradeMarkers(shown.trades, loadedTimeframe, trade?.id ?? null) : [],
+    [shown, trade, showTrades, loadedTimeframe],
   )
+
+  // A fresh [] on every render would redraw the chart's zones on every render.
+  const trades = useMemo(() => shown?.trades ?? [], [shown])
 
   const active = symbols.find((s) => s.id === symbol)
   const precision = active?.pricePrecision ?? 2
@@ -382,7 +409,7 @@ export default function App() {
         timeframes={timeframes}
         showVolume={showVolume}
         showTrades={showTrades}
-        hasTrades={Boolean(result?.trades.length)}
+        hasTrades={Boolean(shown?.trades.length)}
         loading={loading}
         live={live}
         lastCandle={candles[candles.length - 1] ?? null}
@@ -422,7 +449,7 @@ export default function App() {
               timeframe={timeframe}
               candle={hovered ?? candles[candles.length - 1] ?? null}
               precision={precision}
-              trade={selectedTrade}
+              trade={trade}
             />
 
             {error ? (
@@ -450,10 +477,10 @@ export default function App() {
                 pricePrecision={precision}
                 showVolume={showVolume}
                 markers={markers}
-                trades={result?.trades ?? []}
-                selectedTrade={selectedTrade}
+                trades={trades}
+                selectedTrade={trade}
                 showTrades={showTrades}
-                timeframe={timeframe}
+                timeframe={loadedTimeframe}
                 focusTime={focusTime}
                 onReachLeftEdge={loadOlder}
                 onHover={setHovered}
@@ -471,10 +498,10 @@ export default function App() {
         <BacktestPanel
           strategy={strategy}
           params={params}
-          result={result}
+          result={shown}
           running={running}
           error={backtestError}
-          selectedTradeId={selectedTrade?.id ?? null}
+          selectedTradeId={trade?.id ?? null}
           symbol={symbol}
           symbols={symbols}
           range={range}
@@ -522,10 +549,10 @@ export default function App() {
       <footer className="status">
         <span>{candles.length.toLocaleString()} bars loaded</span>
         <span className="dim">{hasMore ? 'scroll left for more history' : 'start of history'}</span>
-        {result && (
+        {shown && (
           <span className="dim">
-            {result.trades.length} trades · {result.summary.returnPct?.toFixed(2)}% ·{' '}
-            {result.summary.winRatePct?.toFixed(0)}% win
+            {shown.trades.length} trades · {shown.summary.returnPct?.toFixed(2)}% ·{' '}
+            {shown.summary.winRatePct?.toFixed(0)}% win
           </span>
         )}
       </footer>

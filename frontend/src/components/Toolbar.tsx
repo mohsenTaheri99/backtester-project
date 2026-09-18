@@ -3,6 +3,9 @@ import { colors } from '../lib/theme'
 import { useTicker } from '../lib/useTicker'
 import type { Candle, LiveStatus, SymbolInfo } from '../types'
 
+// Sentinel option value: picked in the symbol list, it opens the data modal.
+const ADD_SYMBOL = '__add__'
+
 interface Props {
   symbols: SymbolInfo[]
   symbol: string
@@ -94,8 +97,9 @@ export default function Toolbar({
       <select
         className="select"
         value={symbol}
-        onChange={(e) => onSymbolChange(e.target.value)}
-        disabled={symbols.length <= 1}
+        // The last entry is not a symbol: it is the way to get another one.
+        onChange={(e) => (e.target.value === ADD_SYMBOL ? onOpenData() : onSymbolChange(e.target.value))}
+        title="Chart symbol"
       >
         {symbols.length === 0 && <option value="">no symbols</option>}
         {symbols.map((s) => (
@@ -103,6 +107,7 @@ export default function Toolbar({
             {s.id} - {s.name}
           </option>
         ))}
+        <option value={ADD_SYMBOL}>+ Add a symbol...</option>
       </select>
 
       <div className="tf-group" role="group" aria-label="Timeframe">

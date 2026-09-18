@@ -48,6 +48,65 @@ const stale = (to: number | null) => {
   return `${Math.round(hours / 24)}d behind`
 }
 
+/**
+ * Which of three worlds an instrument lives in, from the provider's own type.
+ *
+ * The same split the backend makes when it looks for padded candles (see
+ * market_hours.py): crypto runs all week, spot FX and metals close only at the
+ * weekend, and everything else keeps one exchange's opening hours.
+ */
+type Kind = 'crypto' | 'fx' | 'other'
+
+const kindOf = (match: ProviderSymbol): Kind => {
+  const type = match.type.toLowerCase()
+  if (type.includes('digital currency') || type.includes('crypto')) return 'crypto'
+  if (
+    type.includes('physical currency') ||
+    type.includes('forex') ||
+    type.includes('precious metal')
+  ) {
+    return 'fx'
+  }
+  return 'other'
+}
+
+/** Trades around the clock, so a 1-minute chart of it has no overnight holes. */
+const continuous = (match: ProviderSymbol) => kindOf(match) !== 'other'
+
+const FILTERS: { id: Kind | 'all' | '24h'; label: string; hint: string }[] = [
+  { id: 'all', label: 'All', hint: 'Everything the provider matched' },
+  { id: '24h', label: '24h', hint: 'Crypto, FX and metals: no overnight gaps' },
+  { id: 'crypto', label: 'Crypto', hint: 'Coins and pairs, trading all week' },
+  { id: 'fx', label: 'FX & metals', hint: 'Spot pairs and metals, closed at the weekend' },
+  { id: 'other', label: 'Stocks & ETFs', hint: "One exchange's opening hours" },
+]
+
+/**
+ * One-click starters, all of them on the cheapest plan.
+ *
+ * Searching for what you actually want is surprisingly hard here: "BTC" answers
+ * with nine thinly traded stocks and ETFs before it reaches BTC/USD, and "gold"
+ * with a dozen listings of the same three letters. These are the instruments the
+ * app is built around, spelled the way the provider wants them.
+ */
+const SUGGESTED: (Pick<ProviderSymbol, 'symbol' | 'name' | 'exchange' | 'mic' | 'type'> & {
+  label: string
+})[] = [
+  { label: 'Gold', symbol: 'XAU/USD', name: 'Gold Spot / US Dollar', exchange: 'COMMODITY', mic: 'COMMODITY', type: 'Precious Metal' },
+  { label: 'Silver', symbol: 'XAG/USD', name: 'Silver Spot / US Dollar', exchange: 'COMMODITY', mic: 'COMMODITY', type: 'Precious Metal' },
+  { label: 'Bitcoin', symbol: 'BTC/USD', name: 'Bitcoin US Dollar', exchange: 'Binance', mic: 'DIGITAL_CURRENCY', type: 'Digital Currency' },
+  { label: 'Ethereum', symbol: 'ETH/USD', name: 'Ethereum US Dollar', exchange: 'Binance', mic: 'DIGITAL_CURRENCY', type: 'Digital Currency' },
+  { label: 'Euro', symbol: 'EUR/USD', name: 'Euro / US Dollar', exchange: 'PHYSICAL CURRENCY', mic: 'PHYSICAL_CURRENCY', type: 'Physical Currency' },
+  { label: 'Pound', symbol: 'GBP/USD', name: 'British Pound / US Dollar', exchange: 'PHYSICAL CURRENCY', mic: 'PHYSICAL_CURRENCY', type: 'Physical Currency' },
+  { label: 'Yen', symbol: 'USD/JPY', name: 'US Dollar / Japanese Yen', exchange: 'PHYSICAL CURRENCY', mic: 'PHYSICAL_CURRENCY', type: 'Physical Currency' },
+]
+
+/** Pairs first, then everything else in the provider's order. */
+const sortByUsefulness = (found: ProviderSymbol[]) => [
+  ...found.filter(continuous),
+  ...found.filter((m) => !continuous(m)),
+]
+
 /** The running download, as a bar with a number on it rather than a spinner. */
 function JobBanner({ job, onDismiss }: { job: DataJob; onDismiss: () => void }) {
   useTicker(job.state === 'running')
@@ -114,6 +173,9 @@ export default function DataModal({
   const [query, setQuery] = useState('')
   const [matches, setMatches] = useState<ProviderSymbol[] | null>(null)
   const [days, setDays] = useState(30)
+  const [kind, setKind] = useState<Kind | 'all' | '24h'>('all')
+  const [hideBlocked, setHideBlocked] = useState(true)
+  const [plan, setPlan] = useState('')
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Set when an import starts, read when it finishes: the chart follows it.
@@ -152,7 +214,10 @@ export default function DataModal({
     setError(null)
     setMatches(null)
     searchProvider(query.trim())
-      .then(setMatches)
+      .then((found) => {
+        setPlan(found.plan)
+        setMatches(sortByUsefulness(found.results))
+      })
       .catch((err: Error) => setError(err.message))
       .finally(() => setSearching(false))
   }
@@ -172,6 +237,13 @@ export default function DataModal({
       })
   }
 
+  /** Import one instrument, from the search table or a suggestion chip. */
+  const add = (match: Pick<ProviderSymbol, 'symbol' | 'name' | 'exchange' | 'mic' | 'type'>) =>
+    run(
+      importSymbol(match.symbol, match.name, match.exchange, match.mic, match.type, days),
+      match.symbol.replace(/[^A-Za-z0-9]/g, '').toUpperCase(),
+    )
+
   const handleRemove = (id: string) => {
     setError(null)
     deleteSymbol(id)
@@ -179,6 +251,15 @@ export default function DataModal({
       .catch((err: Error) => setError(err.message))
       .finally(() => setConfirming(null))
   }
+
+  // A search answers with everything that matched the letters; these two say
+  // which of it is worth showing - the right kind, and within reach of the plan.
+  const ofKind = (match: ProviderSymbol) =>
+    kind === 'all' || (kind === '24h' ? continuous(match) : kindOf(match) === kind)
+  const shown = (matches ?? []).filter(
+    (m) => ofKind(m) && (!hideBlocked || m.available !== false),
+  )
+  const blocked = (matches ?? []).filter((m) => m.available === false).length
 
   const totalBars = symbols.reduce((sum, s) => sum + s.bars, 0)
   const totalBytes = symbols.reduce((sum, s) => sum + s.bytes, 0)
@@ -209,6 +290,30 @@ export default function DataModal({
           {job && <JobBanner job={job} onDismiss={dismiss} />}
 
           <h4>Add a symbol</h4>
+          <div className="suggest">
+            <span className="dim small">Common ones:</span>
+            {SUGGESTED.map((pick) => {
+              const held = symbols.some((s) => s.source === pick.symbol)
+              return (
+                <button
+                  key={pick.symbol}
+                  type="button"
+                  className={held ? 'chip held' : 'chip'}
+                  disabled={busy || held}
+                  title={
+                    held
+                      ? `${pick.symbol} is already downloaded`
+                      : `Download ${days} days of ${pick.name}`
+                  }
+                  onClick={() => add(pick)}
+                >
+                  {pick.label}
+                  <span className="dim"> {pick.symbol}</span>
+                </button>
+              )
+            })}
+          </div>
+
           <div className="row">
             <input
               type="text"
@@ -253,39 +358,97 @@ export default function DataModal({
           )}
 
           {matches && (
-            <table className="mini-table">
-              <tbody>
-                {matches.length === 0 && (
-                  <tr>
-                    <td className="dim">Nothing matched “{query}”.</td>
-                  </tr>
-                )}
-                {matches.map((match) => (
-                  <tr key={`${match.symbol}-${match.exchange}`}>
-                    <td>
-                      <b>{match.symbol}</b>
-                      <span className="dim block">{match.name}</span>
-                    </td>
-                    <td className="dim">{match.exchange || match.type}</td>
-                    <td className="right">
-                      <button
-                        type="button"
-                        className="ghost"
-                        disabled={busy}
-                        onClick={() =>
-                          run(
-                            importSymbol(match.symbol, match.name, match.exchange, match.type, days),
-                            match.symbol.replace(/[^A-Za-z0-9]/g, '').toUpperCase(),
-                          )
-                        }
-                      >
-                        Add {days}d
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <>
+              <div className="row filters">
+                <div className="tf-group" role="group" aria-label="Filter by instrument">
+                  {FILTERS.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      className={f.id === kind ? 'tf active' : 'tf'}
+                      onClick={() => setKind(f.id)}
+                      title={f.hint}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="check" title={`Your key is on the ${plan || 'unknown'} plan`}>
+                  <input
+                    type="checkbox"
+                    checked={hideBlocked}
+                    onChange={() => setHideBlocked((on) => !on)}
+                  />
+                  Only what my plan covers
+                </label>
+                <div className="spacer" />
+                <span className="dim small">
+                  {shown.length} of {matches.length}
+                  {blocked > 0 && `, ${blocked} need a paid plan`}
+                </span>
+              </div>
+
+              <table className="mini-table">
+                <tbody>
+                  {shown.length === 0 && (
+                    <tr>
+                      <td className="dim">
+                        {matches.length === 0
+                          ? `Nothing matched “${query}”.`
+                          : 'Nothing here matches those filters.'}
+                      </td>
+                    </tr>
+                  )}
+                  {shown.map((match) => (
+                    <tr key={`${match.symbol}-${match.mic}-${match.exchange}`}>
+                      <td>
+                        <b>{match.symbol}</b>
+                        {continuous(match) && (
+                          <span
+                            className="pill muted"
+                            title="Trades around the clock on trading days - no overnight gaps"
+                          >
+                            24h
+                          </span>
+                        )}
+                        {match.available === false && (
+                          <span
+                            className="pill blocked"
+                            title={`This listing needs the ${match.plan} plan; your key is on ${plan || 'a cheaper one'}`}
+                          >
+                            {match.plan} plan
+                          </span>
+                        )}
+                        <span className="dim block">{match.name}</span>
+                      </td>
+                      <td className="dim">
+                        {/* The type matters as much as the venue: a ticker like BTC is
+                            an exchange-listed ETF as often as it is the coin itself. */}
+                        {match.type || match.exchange}
+                        <span className="dim block">
+                          {[match.exchange, match.mic, match.currency].filter(Boolean).join(' · ')}
+                        </span>
+                      </td>
+                      <td className="right">
+                        <button
+                          type="button"
+                          className="ghost"
+                          disabled={busy || match.available === false}
+                          title={
+                            match.available === false
+                              ? `Not on your plan - the provider would refuse it`
+                              : `Download ${days} days of 1-minute candles`
+                          }
+                          onClick={() => add(match)}
+                        >
+                          Add {days}d
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
 
           <h4>Downloaded</h4>
@@ -323,7 +486,10 @@ export default function DataModal({
                             fx hours
                           </span>
                         )}
-                        <span className="dim block">{symbol.name}</span>
+                        <span className="dim block">
+                          {symbol.name}
+                          {symbol.exchange ? ` · ${symbol.exchange}` : ''}
+                        </span>
                       </td>
                       <td className="right num">{symbol.bars.toLocaleString()}</td>
                       <td className="right num">{symbol.days}</td>

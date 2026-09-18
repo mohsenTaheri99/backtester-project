@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { dismissDataJob, fetchDataJob } from '../api'
 import type { DataJob } from '../types'
 
@@ -9,9 +9,16 @@ import type { DataJob } from '../types'
  * so they run on the server and are polled here - quickly while one is in
  * flight, idly otherwise. `onFinished` fires once per completed job, which is
  * the moment anything showing candle counts needs to reload.
+ *
+ * A finished job stays in that slot until it is dismissed, so most polls answer
+ * with something identical to the last one. Storing it again would be a fresh
+ * object every few seconds and a re-render of everything below the watcher -
+ * enough, from the App-level watcher, to make the chart redraw its trade zones
+ * on a timer. So an unchanged payload is dropped here instead.
  */
 export function useDataJob(active: boolean, onFinished?: () => void) {
   const [job, setJob] = useState<DataJob | null>(null)
+  const seen = useRef<string | null>(null)
 
   useEffect(() => {
     if (!active) return
@@ -23,7 +30,11 @@ export function useDataJob(active: boolean, onFinished?: () => void) {
       const next = await fetchDataJob().catch(() => null)
       if (cancelled) return
       if (next) {
-        setJob(next.job)
+        const signature = JSON.stringify(next.job)
+        if (signature !== seen.current) {
+          seen.current = signature
+          setJob(next.job)
+        }
         const running = next.job?.state === 'running'
         if (wasRunning && !running) onFinished?.()
         wasRunning = running
@@ -39,6 +50,7 @@ export function useDataJob(active: boolean, onFinished?: () => void) {
   }, [active, onFinished])
 
   const dismiss = useCallback(() => {
+    seen.current = null // the next poll decides again, whatever the backend says
     setJob(null)
     dismissDataJob().catch(() => undefined)
   }, [])

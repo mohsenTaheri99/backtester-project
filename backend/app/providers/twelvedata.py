@@ -12,6 +12,7 @@ spelling is more useful than anything we could invent.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -166,11 +167,20 @@ class TwelveData:
         outputsize: int = MAX_OUTPUTSIZE,
         end_date: datetime | None = None,
         start_date: datetime | None = None,
+        mic_code: str = "",
+        exchange: str = "",
     ) -> pd.DataFrame:
-        """One page of candles, oldest first, indexed by UTC bar-open time."""
+        """One page of candles, oldest first, indexed by UTC bar-open time.
+
+        The listing is named as well: without it a ticker is ambiguous - GOLD is
+        a dozen different instruments - and the provider quietly answers with
+        whichever one it considers the default, so the candles would belong to
+        something other than the symbol that was imported.
+        """
         payload = self._request(
             "time_series",
             symbol=symbol,
+            **listing_params(mic_code, exchange),
             interval=interval,
             outputsize=max(1, min(outputsize, MAX_OUTPUTSIZE)),
             order="ASC",
@@ -188,6 +198,8 @@ class TwelveData:
         interval: str = "1min",
         max_pages: int = 60,
         on_page: Callable[[int, int], None] | None = None,
+        mic_code: str = "",
+        exchange: str = "",
     ) -> pd.DataFrame:
         """Every candle in [start, end], paged backwards from `end`.
 
@@ -204,7 +216,9 @@ class TwelveData:
             if cursor <= start:
                 break
             try:
-                page = self.time_series(symbol, interval, MAX_OUTPUTSIZE, cursor, start)
+                page = self.time_series(
+                    symbol, interval, MAX_OUTPUTSIZE, cursor, start, mic_code, exchange
+                )
             except TwelveDataError as exc:
                 if exc.is_no_data:
                     break  # nothing in this window: an answer, not a failure
@@ -261,22 +275,75 @@ class TwelveData:
         out = pd.concat(frames).sort_index()
         return out[~out.index.duplicated(keep="last")].iloc[-bars:]
 
-    def latest(self, symbol: str, interval: str = "1min", bars: int = 200) -> pd.DataFrame:
+    def latest(
+        self,
+        symbol: str,
+        interval: str = "1min",
+        bars: int = 200,
+        mic_code: str = "",
+        exchange: str = "",
+    ) -> pd.DataFrame:
         """The most recent candles, used by the live poller."""
-        return self.time_series(symbol, interval, bars)
+        return self.time_series(symbol, interval, bars, mic_code=mic_code, exchange=exchange)
 
-    def search(self, query: str, limit: int = 12) -> list[dict]:
-        """Symbol lookup for the settings modal. This endpoint needs no key."""
-        payload = self._request("symbol_search", symbol=query, outputsize=limit)
+    def search(self, query: str, limit: int = 30) -> list[dict]:
+        """Symbol lookup for the data modal. This endpoint needs no key.
+
+        `show_plan` makes each row carry the cheapest plan that may download it,
+        which is the difference between a row that works and one that answers a
+        download with "available starting with the Grow plan" after the user has
+        waited for it.
+        """
+        payload = self._request(
+            "symbol_search", symbol=query, outputsize=limit, show_plan="true"
+        )
         return [
             {
                 "symbol": item.get("symbol", ""),
                 "name": item.get("instrument_name", ""),
                 "exchange": item.get("exchange", "") or item.get("country", ""),
+                "mic": item.get("mic_code", ""),
+                "currency": item.get("currency", ""),
+                "country": item.get("country", ""),
                 "type": item.get("instrument_type", ""),
+                "plan": (item.get("access") or {}).get("global", ""),
             }
             for item in (payload.get("data") or [])[:limit]
         ]
+
+
+# Twelve Data's plans, cheapest first. A search row names the cheapest one that
+# may download it; anything above the account's own plan is out of reach.
+PLANS = ("basic", "grow", "pro", "ultra", "enterprise")
+
+
+def plan_rank(name: str) -> int | None:
+    """Where a plan sits in the ladder, or None for a name we do not know.
+
+    None matters: guessing either way would be a claim about someone's account,
+    and the UI would rather say nothing than grey out a row that would have
+    worked, or promise one that answers with an upgrade notice.
+    """
+    try:
+        return PLANS.index((name or "").strip().lower())
+    except ValueError:
+        return None
+
+
+def listing_params(mic: str = "", exchange: str = "") -> dict[str, str]:
+    """Name the listing in whichever parameter this provider wants for it.
+
+    Stocks and ETFs are identified by MIC (`XNYS`). Crypto has no MIC - search
+    returns the placeholder `DIGITAL_CURRENCY` for every venue - and is picked
+    by exchange name (`Binance`) instead. A pair like XAU/USD is listed nowhere
+    and takes no hint at all; sending one would 404.
+    """
+    mic = (mic or "").strip().upper()
+    if re.fullmatch(r"[A-Z0-9]{4}", mic):
+        return {"mic_code": mic}
+    if mic == "DIGITAL_CURRENCY" and exchange.strip():
+        return {"exchange": exchange.strip()}
+    return {}
 
 
 def _http_message(exc: urllib.error.HTTPError) -> str:

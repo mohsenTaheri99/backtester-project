@@ -182,7 +182,12 @@ class LiveFeed:
         try:
             for gap_start, gap_end in gaps:
                 frame = client.range(
-                    symbol.source, gap_start.to_pydatetime(), gap_end.to_pydatetime(), "1min"
+                    symbol.source,
+                    gap_start.to_pydatetime(),
+                    gap_end.to_pydatetime(),
+                    "1min",
+                    mic_code=symbol.mic,
+                    exchange=symbol.exchange,
                 )
                 added += store.merge_bars(symbol.id, frame)
                 store.record_fetch(symbol.id, gap_start, gap_end)
@@ -205,7 +210,9 @@ class LiveFeed:
                 int(settings.get("provider_credits_per_minute") or 8),
             )
             filled = self._catch_up(symbol, client)
-            frame = client.latest(symbol.source, "1min", POLL_BARS)
+            frame = client.latest(
+                symbol.source, "1min", POLL_BARS, symbol.mic, symbol.exchange
+            )
             added = filled + store.merge_bars(symbol_id, frame)
             if not frame.empty:
                 # Keep the record of what has been asked for level with the data,

@@ -27,7 +27,7 @@ from .jobs import Job, jobs
 from .live import feed
 from .market_hours import market_for
 from .providers import TwelveData, TwelveDataError
-from .providers.twelvedata import pages_for
+from .providers.twelvedata import listing_params, pages_for, plan_rank
 from .settings import settings
 from .store import store
 from .strategies import REGISTRY
@@ -106,6 +106,7 @@ def _symbol_payload(symbol: Symbol) -> dict:
         "id": symbol.id,
         "name": symbol.name,
         "exchange": symbol.exchange,
+        "mic": symbol.mic,
         "source": symbol.source,
         "provider": symbol.provider,
         "imported": symbol.imported,
@@ -208,29 +209,96 @@ def provider_usage() -> dict:
         return {"ok": False, "message": str(exc), "code": exc.code}
 
 
+# The account's plan, remembered per key. Every search wants it and it changes
+# about never, while asking the provider each time would cost a request.
+_plan_cache: dict[str, str] = {}
+
+
+def _account_plan(client: TwelveData) -> str:
+    """Which plan this key is on, or "" if the provider would not say."""
+    key = client.api_key
+    if key not in _plan_cache:
+        try:
+            _plan_cache[key] = str(client.usage().get("plan") or "")
+        except TwelveDataError:
+            return ""  # not cached: a key that starts working should be noticed
+    return _plan_cache[key]
+
+
 @app.get("/api/provider/search")
-def provider_search(q: str = Query(..., min_length=1, description="symbol or name")) -> list[dict]:
+def provider_search(q: str = Query(..., min_length=1, description="symbol or name")) -> dict:
+    """Matches, each marked with whether this account's plan can download it."""
+    client = _provider()
     try:
-        return _provider().search(q)
+        results = client.search(q)
     except TwelveDataError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+    plan = _account_plan(client)
+    mine = plan_rank(plan)
+    for row in results:
+        needed = plan_rank(row["plan"])
+        # Unknown on either side means no claim, not a guess; see plan_rank.
+        row["available"] = None if mine is None or needed is None else needed <= mine
+    return {"plan": plan, "results": results}
 
 
 class ImportRequest(BaseModel):
     symbol: str = Field(..., description="provider ticker, e.g. XAU/USD")
     name: str = Field("", description="display name; defaults to the ticker")
     exchange: str = Field("", description="display exchange")
+    mic: str = Field("", description="MIC of the listing, e.g. XNYS; from search")
     type: str = Field("", description="provider instrument type, e.g. 'Precious Metal'")
     days: int | None = Field(None, description="days of history; defaults to the setting")
 
 
-def _slug(ticker: str) -> str:
-    """XAU/USD -> XAUUSD. Re-importing the same ticker reuses its id."""
-    base = re.sub(r"[^A-Za-z0-9]", "", ticker).upper() or "SYMBOL"
-    existing = store.symbol(base)
-    if existing is not None and not existing.imported:
-        return f"{base}-TD"  # a built-in symbol already owns that id
-    return base
+def _slug(text: str, fallback: str = "SYMBOL") -> str:
+    """XAU/USD -> XAUUSD."""
+    return re.sub(r"[^A-Za-z0-9]", "", text).upper() or fallback
+
+
+def _listing_key(mic: str, exchange: str) -> str:
+    """What tells two listings of one ticker apart: the MIC, or the venue name
+    for crypto, whose rows all carry the same DIGITAL_CURRENCY placeholder."""
+    params = listing_params(mic, exchange)
+    return _slug(params.get("mic_code") or params.get("exchange") or exchange, "")
+
+
+def _symbol_id(ticker: str, exchange: str, mic: str = "") -> str:
+    """Pick the id for an import, keeping distinct instruments apart.
+
+    A provider ticker is only unique per listing: a search for "gold" returns a
+    dozen instruments all called GOLD. Keying on the ticker alone made each
+    import overwrite the one before it, so only the last one ever reached the
+    symbol list. Re-importing the same listing still reuses its id, which is
+    what keeps a second download of GOLD@XSTU an update rather than a twin.
+    """
+    base = _slug(ticker)
+
+    def free_for(candidate: str) -> bool:
+        existing = store.symbol(candidate)
+        if existing is None:
+            return True
+        # Same ticker, same listing: the instrument we already hold.
+        return (
+            existing.imported
+            and existing.source == ticker
+            and _listing_key(existing.mic, existing.exchange) == _listing_key(mic, exchange)
+        )
+
+    if free_for(base):
+        return base
+    # Taken by a built-in symbol or by a different instrument of the same name.
+    # The exchange reads better than the MIC (GOLD-NYSE, not GOLD-XNYS); two
+    # listings sharing one exchange name - Euronext Paris and Amsterdam - fall
+    # through to the counter below.
+    scoped = f"{base}-{_slug(exchange or mic, 'TD')}"
+    if free_for(scoped):
+        return scoped
+    n = 2
+    while not free_for(f"{scoped}{n}"):
+        n += 1
+    return f"{scoped}{n}"
 
 
 def _precision_for(frame) -> int:
@@ -270,19 +338,26 @@ def _run_import(job: Job, request: ImportRequest, ticker: str, start, end) -> di
         job.message = f"Downloaded {bars:,} candles"
 
     frame = client.range(
-        ticker, start.to_pydatetime(), end.to_pydatetime(), "1min", on_page=progress
+        ticker,
+        start.to_pydatetime(),
+        end.to_pydatetime(),
+        "1min",
+        on_page=progress,
+        mic_code=request.mic.strip(),
+        exchange=request.exchange.strip(),
     )
     job.credits = client.requests
     if frame.empty:
         raise ValueError(f"no 1-minute candles available for {ticker}")
 
-    symbol_id = _slug(ticker)
+    symbol_id = _symbol_id(ticker, request.exchange.strip(), request.mic.strip())
     symbol = Symbol(
         id=symbol_id,
         name=request.name.strip() or ticker,
         exchange=request.exchange.strip() or "Twelve Data",
         source=ticker,
         csv=f"{symbol_id}_1m.csv",
+        mic=request.mic.strip(),
         price_precision=_precision_for(frame),
         provider="twelvedata",
         imported=True,
@@ -405,6 +480,8 @@ def _run_download(job: Job, symbol: Symbol, gaps: list) -> dict:
                 gap_end.to_pydatetime(),
                 "1min",
                 on_page=progress,
+                mic_code=symbol.mic,
+                exchange=symbol.exchange,
             )
             added += store.merge_bars(symbol.id, frame)
             store.record_fetch(symbol.id, gap_start, gap_end)
